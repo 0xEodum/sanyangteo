@@ -1,0 +1,30 @@
+# Queue Writer Service Configuration
+
+# Redis configuration
+redis:
+  url: "redis://redis:6379/0"
+  stream_key: "tg:messages"
+  maxlen_approx: 1000000  # ~1M messages (adjust based on your needs)
+  dedup_set_key: "tg:dedup"
+  dedup_ttl_seconds: 604800  # 7 days
+  max_connections: 10
+  socket_timeout: 5.0
+  socket_connect_timeout: 5.0
+  health_check_interval: 30
+
+# HTTP server configuration
+server:
+  host: "0.0.0.0"
+  port: 8080
+  workers: 1
+  log_level: "info"
+
+# Security configuration
+security:
+  shared_token_file: "/run/secrets/queue_token"
+
+# Logging configuration
+logging:
+  level: "INFO"
+  json_format: true
+  enable_correlation: true

@@ -1,0 +1,83 @@
+version: '3.8'
+
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: tg-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  queue-writer:
+    build:
+      context: ./queue-writer
+      dockerfile: Dockerfile
+    container_name: tg-queue-writer
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    depends_on:
+      redis:
+        condition: service_healthy
+    secrets:
+      - queue_token
+    environment:
+      - CONFIG_PATH=/app/config.yml
+    volumes:
+      - ./queue-writer/config.yml:/app/config.yml:ro
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  tg-ingestor:
+    build:
+      context: ./tg-ingestor
+      dockerfile: Dockerfile
+    container_name: tg-ingestor
+    restart: unless-stopped
+    depends_on:
+      queue-writer:
+        condition: service_healthy
+    secrets:
+      - queue_token
+      - telegram_api_id
+      - telegram_api_hash
+    environment:
+      - CONFIG_PATH=/app/config.yml
+      - TELEGRAM_SESSION=/app/data/session.session
+    volumes:
+      - ./tg-ingestor/config.yml:/app/config.yml:ro
+      - tg_session_data:/app/data
+    healthcheck:
+      test: ["CMD", "python", "app.py", "healthcheck"]
+      interval: 60s
+      timeout: 15s
+      retries: 3
+
+secrets:
+  queue_token:
+    file: ./secrets/queue_token.txt
+  telegram_api_id:
+    file: ./secrets/telegram_api_id.txt
+  telegram_api_hash:
+    file: ./secrets/telegram_api_hash.txt
+
+volumes:
+  redis_data:
+    driver: local
+  tg_session_data:
+    driver: local
+
+networks:
+  default:
+    name: tg-processing-network

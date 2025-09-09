@@ -1,0 +1,45 @@
+# Telegram Ingestor Service Configuration
+
+# Telegram API configuration
+telegram:
+  session: "/app/data/session.session"  # Path to Telethon session file
+  device_model: "tg-ingestor"
+  system_version: "1.0"
+  app_version: "1.0"
+  flood_sleep_threshold: 60 
+
+# Chat monitoring configuration
+chats:
+  ids:
+    - 4816535195
+
+# Bootstrap configuration (historical messages)
+bootstrap:
+  lookback_hours: 12  # Fetch messages from last 12 hours on startup
+  enabled: true  # Whether to perform bootstrap
+  max_messages_per_chat: null  # No limit by default
+
+# Output configuration (connection to queue-writer)
+output:
+  endpoint: "http://queue-writer:8080/events"
+  timeout_ms: 2000  # Request timeout
+  max_retries: 5  # Maximum retry attempts
+  retry_backoff_ms: 500  # Initial backoff between retries
+  max_backoff_ms: 10000  # Maximum backoff time
+
+# Security configuration
+security:
+  shared_token_file: "/run/secrets/queue_token"
+
+# Message processing configuration
+processing:
+  max_concurrent_messages: 10  # Max concurrent message processing
+  allow_bots: true  # Process messages from bots
+  max_text_length: 16384  # Maximum message text length
+  min_text_length: 1  # Minimum message text length
+
+# Logging configuration
+logging:
+  level: "INFO"  # DEBUG, INFO, WARNING, ERROR, CRITICAL
+  json_format: true  # Enable JSON log formatting
+  enable_correlation: true  # Enable correlation IDs
