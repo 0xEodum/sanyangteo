@@ -10,8 +10,8 @@ from typing import Optional
 
 from redis.exceptions import RedisError
 
-from ..domain.ports import QueueWriter, QueueWriteError
-from ..domain.schema import TelegramEvent, QueueWriteResult, HealthStatus
+from domain.ports import QueueWriter, QueueWriteError
+from domain.schema import TelegramEvent, QueueWriteResult, HealthStatus
 from .redis_client import RedisClient
 
 
