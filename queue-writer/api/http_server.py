@@ -12,9 +12,9 @@ from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 
-from ..domain.ports import QueueWriter, TokenValidator, AuthenticationError
-from ..domain.schema import TelegramEvent, QueueWriteResult, HealthStatus
-from .auth import AuthDependency
+from domain.ports import QueueWriter, TokenValidator, AuthenticationError
+from domain.schema import TelegramEvent, QueueWriteResult, HealthStatus
+from api.auth import AuthDependency
 
 
 logger = logging.getLogger(__name__)

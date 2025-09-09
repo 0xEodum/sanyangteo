@@ -7,7 +7,7 @@ import logging
 from pathlib import Path
 from typing import Optional
 
-from ..domain.ports import TokenValidator, AuthenticationError
+from domain.ports import TokenValidator, AuthenticationError
 
 
 logger = logging.getLogger(__name__)
