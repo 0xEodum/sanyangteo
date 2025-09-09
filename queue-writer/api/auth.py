@@ -5,6 +5,7 @@ Implements shared token validation using Docker secrets.
 
 import logging
 from pathlib import Path
+from fastapi import Header
 from typing import Optional
 
 from domain.ports import TokenValidator, AuthenticationError
@@ -157,7 +158,7 @@ class AuthDependency:
     def __init__(self, token_validator: TokenValidator):
         self.token_validator = token_validator
     
-    async def __call__(self, authorization: Optional[str] = None) -> bool:
+    async def __call__(self, authorization: Optional[str] = Header(default=None)) -> bool:
         """
         Validate authorization header.
         

@@ -18,7 +18,7 @@ asyncio-throttle==1.0.2
 structlog==23.2.0
 
 # Cryptography (required by Telethon)
-cryptography==41.0.8
+cryptography==42.0.0
 
 # Date/time utilities
 python-dateutil==2.8.2

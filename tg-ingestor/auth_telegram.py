@@ -136,6 +136,29 @@ def get_credentials_interactive():
         print("❌ Invalid API ID format!")
         return None, None, None
 
+def get_credentials_from_secrets():
+    """Get Telegram credentials from Docker secrets files."""
+    try:
+        # Try to load from Docker secrets first
+        api_id_path = Path("/run/secrets/telegram_api_id")
+        api_hash_path = Path("/run/secrets/telegram_api_hash")
+        
+        if api_id_path.exists() and api_hash_path.exists():
+            with open(api_id_path, 'r') as f:
+                api_id = int(f.read().strip())
+            
+            with open(api_hash_path, 'r') as f:
+                api_hash = f.read().strip()
+            
+            session_path = os.getenv('TELEGRAM_SESSION', '/app/data/session.session')
+            
+            print(f"✅ Loaded credentials from Docker secrets")
+            return api_id, api_hash, session_path
+            
+    except (FileNotFoundError, ValueError, OSError):
+        pass
+    
+    return None, None, None
 
 async def main():
     """Main function for the authentication script."""
@@ -147,28 +170,21 @@ async def main():
     
     if not api_id or not api_hash:
         print("Docker secrets not found, trying environment variables...")
-        api_id = os.getenv('TELEGRAM_API_ID')
-        api_hash = os.getenv('TELEGRAM_API_HASH')
-        session_path = os.getenv('TELEGRAM_SESSION', './data/session.session')
+        api_id, api_hash, session_path = get_credentials_from_env()
         
         if api_id and api_hash:
-            try:
-                api_id = int(api_id)
-                print(f"✅ Loaded credentials from environment variables")
-            except ValueError:
-                api_id, api_hash = None, None
-    
-    if not api_id or not api_hash:
-        print("Credentials not found in secrets or environment, using interactive mode...")
-        api_id, api_hash, session_path = get_credentials_interactive()
-        
-        if not api_id or not api_hash:
-            print("❌ Invalid credentials provided!")
-            return 1
+            print(f"✅ Loaded credentials from environment variables")
+        else:
+            print("Environment variables not found, using interactive mode...")
+            api_id, api_hash, session_path = get_credentials_interactive()
+            
+            if not api_id or not api_hash:
+                print("❌ Invalid credentials provided!")
+                return 1
     
     print(f"\nUsing session path: {session_path}")
     print(f"API ID: {api_id}")
-    print(f"API Hash: {api_hash[:8]}...{api_hash[-4:]}")  # Partially hide hash
+    print(f"API Hash: {api_hash[:8] if api_hash else 'None'}...{api_hash[-4:] if api_hash else ''}")  # Partially hide hash
     
     # Get phone number
     phone_number = input("\nEnter your phone number (with country code, e.g., +1234567890): ").strip()

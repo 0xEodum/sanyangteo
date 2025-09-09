@@ -1,6 +1,6 @@
 """
-Domain Transfer Objects for tg-ingestor service.
-Defines the event structure that will be sent to queue-writer.
+Data Transfer Objects for tg-ingestor service.
+Defines the structure of events sent to queue-writer.
 """
 
 from datetime import datetime
@@ -23,7 +23,7 @@ class MessageInfo(BaseModel):
     model_config = ConfigDict(extra='forbid')
     
     id: int = Field(..., description="Message ID within the chat")
-    text: str = Field(..., min_length=1, description="Message text content")
+    text: str = Field(..., min_length=1, max_length=16384, description="Message text content")
 
 
 class SenderInfo(BaseModel):
@@ -38,8 +38,8 @@ class SenderInfo(BaseModel):
 
 class TelegramEventDTO(BaseModel):
     """
-    Main event DTO for Telegram messages.
-    This matches the contract expected by queue-writer service.
+    Event DTO sent to queue-writer service.
+    Must match the schema expected by queue-writer.
     """
     model_config = ConfigDict(extra='forbid')
     
@@ -48,11 +48,12 @@ class TelegramEventDTO(BaseModel):
     event_ts: datetime = Field(..., description="Event timestamp (ISO format)")
     
     chat: ChatInfo = Field(..., description="Chat information")
-    message: MessageInfo = Field(..., description="Message information")
+    message: MessageInfo = Field(..., description="Message information") 
     sender: SenderInfo = Field(..., description="Sender information")
     
     idempotency_key: str = Field(
-        ..., 
+        ...,
+        pattern=r"^tg:-?\d+:\d+$", 
         description="Unique key for idempotency: tg:<chat_id>:<message_id>"
     )
     
@@ -66,7 +67,7 @@ class TelegramEventDTO(BaseModel):
             message_id: Telegram message ID
             
         Returns:
-            Idempotency key in format: tg:<chat_id>:<message_id>
+            Idempotency key string
         """
         return f"tg:{chat_id}:{message_id}"
 
@@ -76,122 +77,77 @@ class PublishResult(BaseModel):
     model_config = ConfigDict(extra='forbid')
     
     success: bool = Field(..., description="Whether publishing succeeded")
-    stream_id: Optional[str] = Field(None, description="Stream ID from queue-writer")
+    stream_id: Optional[str] = Field(None, description="Stream ID if successful")
     is_duplicate: bool = Field(default=False, description="Whether event was duplicate")
     error: Optional[str] = Field(None, description="Error message if failed")
     retry_count: int = Field(default=0, description="Number of retries attempted")
 
 
+class ChatConfig(BaseModel):
+    """Configuration for a monitored chat."""
+    model_config = ConfigDict(extra='forbid')
+    
+    id: int = Field(..., description="Chat ID to monitor")
+    enabled: bool = Field(default=True, description="Whether monitoring is enabled")
+    title: Optional[str] = Field(None, description="Chat title for reference")
+
+
 class IngestionStats(BaseModel):
-    """Statistics for message ingestion."""
+    """Statistics for ingestion process."""
     model_config = ConfigDict(extra='forbid')
     
-    total_processed: int = Field(default=0, description="Total messages processed")
-    total_published: int = Field(default=0, description="Total messages published")
-    total_duplicates: int = Field(default=0, description="Total duplicates detected")
-    total_filtered: int = Field(default=0, description="Total messages filtered out")
-    total_errors: int = Field(default=0, description="Total errors encountered")
+    messages_processed: int = Field(default=0, description="Total messages processed")
+    messages_published: int = Field(default=0, description="Messages successfully published")
+    messages_filtered: int = Field(default=0, description="Messages filtered out")
+    messages_failed: int = Field(default=0, description="Messages that failed to process")
+    duplicates_detected: int = Field(default=0, description="Duplicate messages detected")
     
-    # Per chat statistics
-    chat_stats: dict[int, dict[str, int]] = Field(
-        default_factory=dict,
-        description="Per-chat statistics"
-    )
+    # Per-chat stats
+    chats_monitored: int = Field(default=0, description="Number of chats being monitored")
+    last_activity: Optional[datetime] = Field(None, description="Last message timestamp")
     
-    # Bootstrap statistics
-    bootstrap_complete: bool = Field(default=False, description="Whether bootstrap completed")
-    bootstrap_messages: int = Field(default=0, description="Messages processed during bootstrap")
+    # Bootstrap stats
+    bootstrap_completed: bool = Field(default=False, description="Whether bootstrap completed")
+    bootstrap_messages: int = Field(default=0, description="Messages loaded during bootstrap")
     
-    def increment_processed(self, chat_id: int) -> None:
-        """Increment processed counter."""
-        self.total_processed += 1
-        self._ensure_chat_stats(chat_id)
-        self.chat_stats[chat_id]["processed"] += 1
+    def increment_processed(self) -> None:
+        """Increment processed message counter."""
+        self.messages_processed += 1
+        self.last_activity = datetime.utcnow()
     
-    def increment_published(self, chat_id: int) -> None:
-        """Increment published counter."""
-        self.total_published += 1
-        self._ensure_chat_stats(chat_id)
-        self.chat_stats[chat_id]["published"] += 1
+    def increment_published(self) -> None:
+        """Increment published message counter."""
+        self.messages_published += 1
     
-    def increment_duplicates(self, chat_id: int) -> None:
-        """Increment duplicates counter."""
-        self.total_duplicates += 1
-        self._ensure_chat_stats(chat_id)
-        self.chat_stats[chat_id]["duplicates"] += 1
+    def increment_filtered(self) -> None:
+        """Increment filtered message counter."""
+        self.messages_filtered += 1
     
-    def increment_filtered(self, chat_id: int) -> None:
-        """Increment filtered counter."""
-        self.total_filtered += 1
-        self._ensure_chat_stats(chat_id)
-        self.chat_stats[chat_id]["filtered"] += 1
+    def increment_failed(self) -> None:
+        """Increment failed message counter."""
+        self.messages_failed += 1
     
-    def increment_errors(self, chat_id: int) -> None:
-        """Increment errors counter."""
-        self.total_errors += 1
-        self._ensure_chat_stats(chat_id)
-        self.chat_stats[chat_id]["errors"] += 1
-    
-    def _ensure_chat_stats(self, chat_id: int) -> None:
-        """Ensure chat statistics entry exists."""
-        if chat_id not in self.chat_stats:
-            self.chat_stats[chat_id] = {
-                "processed": 0,
-                "published": 0,
-                "duplicates": 0,
-                "filtered": 0,
-                "errors": 0
-            }
+    def increment_duplicate(self) -> None:
+        """Increment duplicate message counter."""
+        self.duplicates_detected += 1
 
 
-class ChatMetadata(BaseModel):
-    """Metadata about a Telegram chat."""
+class MessageContext(BaseModel):
+    """Context information for message processing."""
     model_config = ConfigDict(extra='forbid')
     
-    id: int = Field(..., description="Chat ID")
-    title: str = Field(..., description="Chat title")
-    type: str = Field(..., description="Chat type")
-    username: Optional[str] = Field(None, description="Chat username")
-    participant_count: Optional[int] = Field(None, description="Number of participants")
+    chat_id: int = Field(..., description="Chat ID")
+    message_id: int = Field(..., description="Message ID")
+    is_bootstrap: bool = Field(default=False, description="Whether from bootstrap process")
+    retry_count: int = Field(default=0, description="Current retry count")
+    processing_start: datetime = Field(default_factory=datetime.utcnow)
     
-    # Status information
-    is_accessible: bool = Field(default=True, description="Whether chat is accessible")
-    last_message_date: Optional[datetime] = Field(None, description="Last message timestamp")
-    error: Optional[str] = Field(None, description="Error accessing chat")
-
-
-class BootstrapProgress(BaseModel):
-    """Progress information for bootstrap process."""
-    model_config = ConfigDict(extra='forbid')
-    
-    chat_id: int = Field(..., description="Chat ID being processed")
-    total_expected: Optional[int] = Field(None, description="Expected number of messages")
-    processed: int = Field(default=0, description="Messages processed so far")
-    published: int = Field(default=0, description="Messages published so far")
-    filtered: int = Field(default=0, description="Messages filtered out")
-    
-    start_time: datetime = Field(default_factory=datetime.utcnow)
-    end_time: Optional[datetime] = Field(None, description="Completion time")
-    
-    @property
-    def is_complete(self) -> bool:
-        """Check if bootstrap is complete."""
-        return self.end_time is not None
-    
-    @property
-    def duration_seconds(self) -> Optional[float]:
-        """Get bootstrap duration in seconds."""
-        if not self.end_time:
-            return None
-        return (self.end_time - self.start_time).total_seconds()
-    
-    @property
-    def progress_percentage(self) -> Optional[float]:
-        """Get progress as percentage (0-100)."""
-        if not self.total_expected or self.total_expected == 0:
-            return None
-        return min(100.0, (self.processed / self.total_expected) * 100)
-    
-    def mark_complete(self) -> None:
-        """Mark bootstrap as complete."""
-        self.end_time = datetime.utcnow()
+    def get_processing_time_ms(self) -> float:
+        """
+        Get processing time in milliseconds.
+        
+        Returns:
+            Processing time in milliseconds
+        """
+        elapsed = datetime.utcnow() - self.processing_start
+        return elapsed.total_seconds() * 1000
