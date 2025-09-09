@@ -222,7 +222,7 @@ class TelethonMessageMapper(MessageMapper):
     
     def _extract_chat_id(self, message: Message) -> Optional[int]:
         """
-        Extract chat ID from message peer.
+        Extract chat ID from message peer (MTProto format - positive numbers).
         
         Args:
             message: Telethon Message object
@@ -237,15 +237,13 @@ class TelethonMessageMapper(MessageMapper):
             peer = message.peer_id
             
             if isinstance(peer, PeerChannel):
-                # Supergroup/channel - make negative for supergroups
-                channel_id = peer.channel_id
-                # Convert to supergroup format (negative with -100 prefix)
-                return -1000000000000 - channel_id
+                # Channel/Supergroup - use channel_id as is (positive)
+                return peer.channel_id
             elif isinstance(peer, PeerChat):
-                # Regular group - make negative
-                return -peer.chat_id
+                # Regular group - use chat_id as is (positive)
+                return peer.chat_id
             elif isinstance(peer, PeerUser):
-                # Private chat - not supported
+                # Private chat - not supported for our use case
                 return None
             
             return None

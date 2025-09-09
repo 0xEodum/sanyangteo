@@ -65,12 +65,16 @@ class ChatsConfig(BaseModel):
     
     @validator('ids')
     def validate_chat_ids(cls, v):
-        """Validate chat IDs are negative (groups/supergroups)."""
+        """Validate chat IDs format for Telethon (MTProto)."""
         for chat_id in v:
-            if chat_id > 0:
-                raise ValueError(f"Chat ID {chat_id} should be negative for groups/supergroups")
-            if chat_id > -1000:
-                logger.warning(f"Chat ID {chat_id} might be a regular group, consider using supergroup")
+            if chat_id <= 0:
+                raise ValueError(
+                    f"Chat ID {chat_id} should be positive for Telethon (MTProto format). "
+                    f"Use the ID from your list_dialogs.py script directly."
+                )
+            # Reasonable range check for Telegram IDs
+            if chat_id > 999999999999:  # Very large number sanity check
+                logger.warning(f"Chat ID {chat_id} seems unusually large, double-check it")
         return v
 
 

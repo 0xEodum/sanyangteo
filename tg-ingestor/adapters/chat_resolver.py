@@ -245,7 +245,7 @@ class TelegramChatResolver(ChatResolver):
     
     def _is_valid_chat_id(self, chat_id: int) -> bool:
         """
-        Validate chat ID format.
+        Validate chat ID format for Telethon (MTProto).
         
         Args:
             chat_id: Chat ID to validate
@@ -253,24 +253,20 @@ class TelegramChatResolver(ChatResolver):
         Returns:
             True if valid format, False otherwise
         """
-        # Telegram chat ID rules:
-        # - Groups: negative numbers (usually -XXXXXXX)
-        # - Supergroups: negative numbers starting with -100 (-100XXXXXXXXX)
-        # - Channels: similar to supergroups
-        # - Users: positive numbers (not relevant for our use case)
+        # Telethon (MTProto) chat ID rules:
+        # - Groups and supergroups: positive numbers 
+        # - Reasonable range for Telegram IDs
         
-        if chat_id > 0:
-            # Positive IDs are for users, not groups
+        if chat_id <= 0:
+            # In MTProto format, chat IDs are positive
             return False
         
-        # Negative IDs for groups/supergroups
-        if chat_id < 0:
-            # Check for reasonable range
-            # Regular groups: typically -1 to -999999999
-            # Supergroups: typically -1000000000000 and below
-            return chat_id >= -2000000000000  # Reasonable upper bound
+        # Check for reasonable range
+        # Telegram IDs are typically in range 1 to 999999999999
+        if chat_id > 999999999999:
+            return False
         
-        return False
+        return True
     
     def clear_cache(self) -> None:
         """Clear the chat info cache."""
