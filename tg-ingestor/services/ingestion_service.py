@@ -10,20 +10,20 @@ from typing import List, Optional
 
 from telethon.types import Message
 
-from ..domain.ports import (
+from domain.ports import (
     IngestionService,
     TelegramClient,
     Publisher,
     ChatResolver,
     MessageFilter,
     MessageMapper,
-    IngestionError
+    IngestionError,
 )
-from ..domain.dto import (
+from domain.dto import (
     ChatConfig,
     IngestionStats,
     MessageContext,
-    TelegramEventDTO
+    TelegramEventDTO,
 )
 
 

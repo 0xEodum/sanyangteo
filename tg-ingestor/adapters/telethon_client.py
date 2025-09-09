@@ -21,8 +21,13 @@ from telethon.types import Message, Chat, Channel, User
 from telethon.tl.functions.messages import GetHistoryRequest
 from telethon.tl.types import InputPeerEmpty
 
-from ..domain.ports import TelegramClient as TelegramClientInterface, ConnectionError, MonitoringError, HistoryError
-from ..domain.dto import MessageContext
+from domain.ports import (
+    TelegramClient as TelegramClientInterface,
+    ConnectionError,
+    MonitoringError,
+    HistoryError,
+)
+from domain.dto import MessageContext
 
 
 logger = logging.getLogger(__name__)

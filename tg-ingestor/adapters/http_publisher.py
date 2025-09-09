@@ -10,8 +10,8 @@ from typing import Optional
 import httpx
 from httpx import HTTPStatusError, RequestError
 
-from ..domain.ports import Publisher, PublishError
-from ..domain.dto import TelegramEventDTO, PublishResult
+from domain.ports import Publisher, PublishError
+from domain.dto import TelegramEventDTO, PublishResult
 
 
 logger = logging.getLogger(__name__)
