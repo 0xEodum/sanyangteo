@@ -22,7 +22,7 @@ from telethon.types import (
     MessageActionChannelMigrateFrom
 )
 
-from ..domain.ports import MessageFilter
+from domain.ports import MessageFilter
 
 
 logger = logging.getLogger(__name__)

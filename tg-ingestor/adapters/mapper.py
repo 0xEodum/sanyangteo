@@ -10,8 +10,8 @@ from typing import Optional
 from telethon.types import Message, User, Chat, Channel
 from telethon.tl.types import PeerUser, PeerChat, PeerChannel
 
-from ..domain.ports import MessageMapper, MappingError
-from ..domain.dto import (
+from domain.ports import MessageMapper, MappingError
+from domain.dto import (
     TelegramEventDTO,
     ChatInfo,
     MessageInfo,

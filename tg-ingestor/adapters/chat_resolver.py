@@ -6,8 +6,8 @@ Ensures that configured chats are accessible and of the correct type.
 import logging
 from typing import List, Optional, Dict, Set
 
-from ..domain.ports import ChatResolver, TelegramClient, ValidationError
-from ..domain.dto import ChatConfig
+from domain.ports import ChatResolver, TelegramClient, ValidationError
+from domain.dto import ChatConfig
 
 
 logger = logging.getLogger(__name__)
