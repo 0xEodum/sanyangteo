@@ -172,9 +172,28 @@ class HTTPPublisher(Publisher):
         """
         try:
             # Send POST request
+            event_data = event.model_dump(mode='json')
+            
+            # Альтернативный способ - использовать model_dump_json() и затем json.loads()
+            # import json
+            # event_json_str = event.model_dump_json()
+            # event_data = json.loads(event_json_str)
+            
+            logger.debug(
+                f"Sending event data",
+                extra={
+                    "component": "http_publisher",
+                    "chat_id": event.chat.id,
+                    "message_id": event.message.id,
+                    "event_ts": event_data.get("event_ts"),  # Теперь это строка ISO
+                    "data_keys": list(event_data.keys())
+                }
+            )
+            
+            # Send POST request
             response = await self.client.post(
                 self.endpoint,
-                json=event.model_dump(),
+                json=event_data,  # Теперь все datetime объекты сериализованы в строки
                 headers={
                     "X-Idempotency-Key": event.idempotency_key,
                     "X-Event-Type": event.event_type

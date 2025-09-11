@@ -1,6 +1,6 @@
 """
-Message mapper for converting Telethon messages to DTOs.
-Handles the transformation from Telegram API objects to internal event format.
+Message mapper для конвертации Telethon messages в DTOs.
+Использует правильные методы получения информации об отправителях.
 """
 
 import logging
@@ -9,6 +9,7 @@ from typing import Optional
 
 from telethon.types import Message, User, Chat, Channel
 from telethon.tl.types import PeerUser, PeerChat, PeerChannel
+from telethon import utils
 
 from domain.ports import MessageMapper, MappingError
 from domain.dto import (
@@ -26,12 +27,17 @@ logger = logging.getLogger(__name__)
 class TelethonMessageMapper(MessageMapper):
     """
     Maps Telethon Message objects to TelegramEventDTO.
-    Handles various Telegram entity types and edge cases.
+    Handles various Telegram entity types and edge cases properly.
     """
     
-    def __init__(self):
-        """Initialize the mapper."""
-        pass
+    def __init__(self, telegram_client=None):
+        """
+        Initialize the mapper.
+        
+        Args:
+            telegram_client: Ссылка на клиент для асинхронных операций
+        """
+        self.telegram_client = telegram_client
     
     async def map_message(
         self,
@@ -80,7 +86,7 @@ class TelethonMessageMapper(MessageMapper):
             # Map message information
             message_info = self._map_message_info(message)
             
-            # Map sender information
+            # Map sender information - ИСПРАВЛЕНО: используем правильные методы
             sender_info = await self._map_sender_info(message, context)
             if not sender_info:
                 logger.warning(
@@ -120,6 +126,7 @@ class TelethonMessageMapper(MessageMapper):
                     "chat_id": chat_info.id,
                     "message_id": message_info.id,
                     "sender_id": sender_info.id,
+                    "sender_name": sender_info.display_name,
                     "text_length": len(message_info.text)
                 }
             )
@@ -141,13 +148,6 @@ class TelethonMessageMapper(MessageMapper):
     async def _map_chat_info(self, message: Message, context: MessageContext) -> Optional[ChatInfo]:
         """
         Map chat information from message.
-        
-        Args:
-            message: Telethon Message object
-            context: Message processing context
-            
-        Returns:
-            ChatInfo object or None if mapping fails
         """
         try:
             # Get chat ID from peer
@@ -169,15 +169,7 @@ class TelethonMessageMapper(MessageMapper):
             return None
     
     def _map_message_info(self, message: Message) -> MessageInfo:
-        """
-        Map message information.
-        
-        Args:
-            message: Telethon Message object
-            
-        Returns:
-            MessageInfo object
-        """
+        """Map message information."""
         return MessageInfo(
             id=message.id,
             text=message.message.strip()
@@ -186,6 +178,7 @@ class TelethonMessageMapper(MessageMapper):
     async def _map_sender_info(self, message: Message, context: MessageContext) -> Optional[SenderInfo]:
         """
         Map sender information from message.
+        ИСПРАВЛЕНО: Используем правильные методы как в рабочем скрипте.
         
         Args:
             message: Telethon Message object
@@ -195,19 +188,59 @@ class TelethonMessageMapper(MessageMapper):
             SenderInfo object or None if mapping fails
         """
         try:
-            if not message.sender:
-                logger.warning(f"Message has no sender")
-                return None
+            sender = None
             
-            sender = message.sender
+            # Способ 1: Попробуем message.sender (быстрый)
+            if hasattr(message, 'sender') and message.sender:
+                sender = message.sender
+                logger.debug("Got sender from message.sender")
             
-            # Extract basic info
-            sender_id = sender.id
+            # Способ 2: Если sender None, попробуем через telegram_client
+            elif self.telegram_client and hasattr(message, 'sender_id') and message.sender_id:
+                try:
+                    sender = await self.telegram_client.get_entity(message.sender_id)
+                    logger.debug("Got sender via telegram_client.get_entity")
+                except Exception as e:
+                    logger.debug(f"Failed to get sender via client: {e}")
+            
+            # Способ 3: Попробуем через from_id (fallback)
+            elif hasattr(message, 'from_id') and message.from_id:
+                try:
+                    if self.telegram_client:
+                        if hasattr(message.from_id, 'user_id'):
+                            sender = await self.telegram_client.get_entity(message.from_id.user_id)
+                        else:
+                            sender = await self.telegram_client.get_entity(message.from_id)
+                        logger.debug("Got sender via from_id")
+                except Exception as e:
+                    logger.debug(f"Failed to get sender via from_id: {e}")
+            
+            if not sender:
+                # Последний fallback - анонимный администратор
+                logger.warning(
+                    f"Could not resolve sender for message",
+                    extra={
+                        "component": "mapper",
+                        "message_id": message.id,
+                        "sender_id": getattr(message, 'sender_id', None),
+                        "from_id": getattr(message, 'from_id', None)
+                    }
+                )
+                
+                return SenderInfo(
+                    id=getattr(message, 'sender_id', 0) or 0,
+                    username=None,
+                    display_name="Анонимный администратор",
+                    is_bot=False
+                )
+            
+            # Извлекаем информацию из sender
+            sender_id = getattr(sender, 'id', 0)
             username = getattr(sender, 'username', None)
             is_bot = getattr(sender, 'bot', False)
             
-            # Build display name
-            display_name = self._build_display_name(sender)
+            # ИСПРАВЛЕНО: Используем utils.get_display_name как в рабочем скрипте
+            display_name = self._get_human_sender_name(sender)
             
             return SenderInfo(
                 id=sender_id,
@@ -217,18 +250,48 @@ class TelethonMessageMapper(MessageMapper):
             )
             
         except Exception as e:
-            logger.error(f"Failed to map sender info: {e}")
+            logger.error(
+                f"Failed to map sender info: {e}",
+                extra={
+                    "component": "mapper",
+                    "message_id": getattr(message, 'id', 'unknown'),
+                    "error": str(e)
+                }
+            )
             return None
+    
+    def _get_human_sender_name(self, sender) -> str:
+        """
+        ИСПРАВЛЕНО: Копия функции из рабочего скрипта.
+        Аккуратно формируем имя отправителя.
+        
+        Args:
+            sender: Telethon User/Chat object
+            
+        Returns:
+            Display name string
+        """
+        try:
+            if sender is None:
+                return "Анонимный администратор"
+            
+            # utils.get_display_name сам соберёт имя/фамилию/username
+            name = utils.get_display_name(sender).strip()
+            if not name:
+                # на всякий случай
+                if getattr(sender, "username", None):
+                    return f"@{sender.username}"
+                return f"UserID {getattr(sender, 'id', 'unknown')}"
+            
+            return name
+            
+        except Exception as e:
+            logger.error(f"Failed to get human sender name: {e}")
+            return f"Unknown {getattr(sender, 'id', 'sender')}"
     
     def _extract_chat_id(self, message: Message) -> Optional[int]:
         """
         Extract chat ID from message peer (MTProto format - positive numbers).
-        
-        Args:
-            message: Telethon Message object
-            
-        Returns:
-            Chat ID or None if extraction fails
         """
         try:
             if not message.peer_id:
@@ -255,12 +318,6 @@ class TelethonMessageMapper(MessageMapper):
     async def _get_chat_details(self, message: Message) -> tuple[str, Optional[str]]:
         """
         Get chat type and title.
-        
-        Args:
-            message: Telethon Message object
-            
-        Returns:
-            Tuple of (chat_type, chat_title)
         """
         try:
             peer = message.peer_id
@@ -292,51 +349,9 @@ class TelethonMessageMapper(MessageMapper):
             logger.error(f"Failed to get chat details: {e}")
             return "unknown", None
     
-    def _build_display_name(self, sender) -> str:
-        """
-        Build display name for sender.
-        
-        Args:
-            sender: Telethon User/Chat object
-            
-        Returns:
-            Display name string
-        """
-        try:
-            if isinstance(sender, User):
-                # Build name from first_name and last_name
-                parts = []
-                if sender.first_name:
-                    parts.append(sender.first_name)
-                if sender.last_name:
-                    parts.append(sender.last_name)
-                
-                if parts:
-                    return " ".join(parts)
-                elif sender.username:
-                    return f"@{sender.username}"
-                else:
-                    return f"User {sender.id}"
-            
-            # For other types, use title or ID
-            if hasattr(sender, 'title') and sender.title:
-                return sender.title
-            
-            return f"Sender {sender.id}"
-            
-        except Exception as e:
-            logger.error(f"Failed to build display name: {e}")
-            return f"Unknown {getattr(sender, 'id', 'sender')}"
-    
     def _get_message_timestamp(self, message: Message) -> datetime:
         """
         Get message timestamp in UTC.
-        
-        Args:
-            message: Telethon Message object
-            
-        Returns:
-            UTC datetime
         """
         try:
             if message.date:
@@ -354,3 +369,12 @@ class TelethonMessageMapper(MessageMapper):
         except Exception as e:
             logger.error(f"Failed to get message timestamp: {e}")
             return datetime.now(timezone.utc)
+    
+    def set_telegram_client(self, client):
+        """
+        Set telegram client reference for async operations.
+        
+        Args:
+            client: TelegramClient instance
+        """
+        self.telegram_client = client

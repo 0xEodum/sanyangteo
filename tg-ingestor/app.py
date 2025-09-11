@@ -117,8 +117,10 @@ class TgIngestorApplication:
                 max_text_length=self.config.processing.max_text_length
             )
             
-            # Initialize message mapper
+            # ИСПРАВЛЕНО: Initialize message mapper с ссылкой на telegram_client
             self.message_mapper = TelethonMessageMapper()
+            # После создания telegram_client передаем ему ссылку для async операций
+            self.message_mapper.set_telegram_client(self.telegram_client.client)
             
             # Convert chat IDs to ChatConfig objects
             chat_configs = [
