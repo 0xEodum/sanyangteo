@@ -1,6 +1,6 @@
 """
 Message mapper для конвертации Telethon messages в DTOs.
-Использует правильные методы получения информации об отправителях.
+Исправленная версия с использованием подходов из рабочего скрипта.
 """
 
 import logging
@@ -25,6 +25,9 @@ logger = logging.getLogger(__name__)
 
 
 class TelethonMessageMapper(MessageMapper):
+    """
+    Исправленный mapper с использованием надежных методов получения chat и sender.
+    """
 
     def __init__(self, telegram_client=None):
         self.telegram_client = telegram_client
@@ -34,6 +37,9 @@ class TelethonMessageMapper(MessageMapper):
         message: Message,
         context: MessageContext
     ) -> Optional[TelegramEventDTO]:
+        """
+        Map Telethon message to DTO using reliable methods.
+        """
         try:
             # Extract basic message info
             if not message.message or not isinstance(message.message, str):
@@ -47,8 +53,8 @@ class TelethonMessageMapper(MessageMapper):
                 )
                 return None
             
-            # Map chat information
-            chat_info = await self._map_chat_info(message, context)
+            # Map chat information - ИСПРАВЛЕНО: используем надежный метод
+            chat_info = await self._map_chat_info_fixed(message, context)
             if not chat_info:
                 logger.warning(
                     f"Failed to map chat info",
@@ -63,8 +69,8 @@ class TelethonMessageMapper(MessageMapper):
             # Map message information
             message_info = self._map_message_info(message)
             
-            # Map sender information - ИСПРАВЛЕНО: используем правильные методы
-            sender_info = await self._map_sender_info(message, context)
+            # Map sender information - ИСПРАВЛЕНО: используем надежный метод
+            sender_info = await self._map_sender_info_fixed(message, context)
             if not sender_info:
                 logger.warning(
                     f"Failed to map sender info",
@@ -104,6 +110,7 @@ class TelethonMessageMapper(MessageMapper):
                     "message_id": message_info.id,
                     "sender_id": sender_info.id,
                     "sender_name": sender_info.display_name,
+                    "chat_title": chat_info.title,
                     "text_length": len(message_info.text)
                 }
             )
@@ -122,85 +129,96 @@ class TelethonMessageMapper(MessageMapper):
             )
             raise MappingError(f"Message mapping failed: {e}") from e
     
-    async def _map_chat_info(self, message: Message, context: MessageContext) -> Optional[ChatInfo]:
+    async def _map_chat_info_fixed(self, message: Message, context: MessageContext) -> Optional[ChatInfo]:
         """
-        Map chat information from message.
+        ИСПРАВЛЕНО: Используем прямые методы получения chat как в рабочем скрипте.
         """
         try:
-            # Get chat ID from peer
-            chat_id = self._extract_chat_id(message)
-            if chat_id is None:
+            chat = None
+            
+            # Способ 1: Используем get_chat() как в рабочем скрипте
+            if hasattr(message, 'get_chat'):
+                try:
+                    chat = await message.get_chat()
+                    logger.debug("Got chat via message.get_chat()")
+                except Exception as e:
+                    logger.debug(f"message.get_chat() failed: {e}")
+            
+            # Способ 2: Через telegram_client если get_chat не сработал
+            if not chat and self.telegram_client:
+                try:
+                    chat_id = self._extract_chat_id_from_peer(message)
+                    if chat_id:
+                        chat = await self.telegram_client.get_entity(chat_id)
+                        logger.debug("Got chat via telegram_client.get_entity")
+                except Exception as e:
+                    logger.debug(f"Failed to get chat via client: {e}")
+            
+            if not chat:
+                logger.warning(f"Could not resolve chat for message {message.id}")
                 return None
             
-            # Determine chat type and title
-            chat_type, chat_title = await self._get_chat_details(message)
+            # Извлекаем информацию из chat entity
+            chat_id = getattr(chat, 'id', 0)
+            chat_title = getattr(chat, 'title', f'Chat {chat_id}')
+            
+            # Определяем тип чата как в рабочем скрипте
+            if isinstance(chat, Chat):
+                chat_type = "group"
+            elif isinstance(chat, Channel):
+                if getattr(chat, 'megagroup', False):
+                    chat_type = "supergroup"
+                else:
+                    chat_type = "channel"
+            else:
+                chat_type = "unknown"
             
             return ChatInfo(
                 id=chat_id,
                 type=chat_type,
-                title=chat_title or f"Chat {chat_id}"
+                title=chat_title
             )
             
         except Exception as e:
             logger.error(f"Failed to map chat info: {e}")
             return None
     
-    def _map_message_info(self, message: Message) -> MessageInfo:
-        """Map message information."""
-        return MessageInfo(
-            id=message.id,
-            text=message.message.strip()
-        )
-    
-    async def _map_sender_info(self, message: Message, context: MessageContext) -> Optional[SenderInfo]:
+    async def _map_sender_info_fixed(self, message: Message, context: MessageContext) -> Optional[SenderInfo]:
         """
-        Map sender information from message.
-        ИСПРАВЛЕНО: Используем правильные методы как в рабочем скрипте.
-        
-        Args:
-            message: Telethon Message object
-            context: Message processing context
-            
-        Returns:
-            SenderInfo object or None if mapping fails
+        ИСПРАВЛЕНО: Используем прямые методы получения sender как в рабочем скрипте.
         """
         try:
             sender = None
             
-            # Способ 1: Попробуем message.sender (быстрый)
-            if hasattr(message, 'sender') and message.sender:
+            # Способ 1: Используем get_sender() как в рабочем скрипте
+            if hasattr(message, 'get_sender'):
+                try:
+                    sender = await message.get_sender()
+                    logger.debug("Got sender via message.get_sender()")
+                except Exception as e:
+                    logger.debug(f"message.get_sender() failed: {e}")
+            
+            # Способ 2: Fallback через message.sender
+            if not sender and hasattr(message, 'sender') and message.sender:
                 sender = message.sender
                 logger.debug("Got sender from message.sender")
             
-            # Способ 2: Если sender None, попробуем через telegram_client
-            elif self.telegram_client and hasattr(message, 'sender_id') and message.sender_id:
+            # Способ 3: Через telegram_client
+            if not sender and self.telegram_client and hasattr(message, 'sender_id') and message.sender_id:
                 try:
                     sender = await self.telegram_client.get_entity(message.sender_id)
                     logger.debug("Got sender via telegram_client.get_entity")
                 except Exception as e:
                     logger.debug(f"Failed to get sender via client: {e}")
             
-            # Способ 3: Попробуем через from_id (fallback)
-            elif hasattr(message, 'from_id') and message.from_id:
-                try:
-                    if self.telegram_client:
-                        if hasattr(message.from_id, 'user_id'):
-                            sender = await self.telegram_client.get_entity(message.from_id.user_id)
-                        else:
-                            sender = await self.telegram_client.get_entity(message.from_id)
-                        logger.debug("Got sender via from_id")
-                except Exception as e:
-                    logger.debug(f"Failed to get sender via from_id: {e}")
-            
             if not sender:
-                # Последний fallback - анонимный администратор
+                # Fallback - анонимный администратор
                 logger.warning(
                     f"Could not resolve sender for message",
                     extra={
                         "component": "mapper",
                         "message_id": message.id,
-                        "sender_id": getattr(message, 'sender_id', None),
-                        "from_id": getattr(message, 'from_id', None)
+                        "sender_id": getattr(message, 'sender_id', None)
                     }
                 )
                 
@@ -211,13 +229,13 @@ class TelethonMessageMapper(MessageMapper):
                     is_bot=False
                 )
             
-            # Извлекаем информацию из sender
+            # Извлекаем информацию из sender entity
             sender_id = getattr(sender, 'id', 0)
             username = getattr(sender, 'username', None)
             is_bot = getattr(sender, 'bot', False)
             
             # ИСПРАВЛЕНО: Используем utils.get_display_name как в рабочем скрипте
-            display_name = self._get_human_sender_name(sender)
+            display_name = self._get_human_sender_name_fixed(sender)
             
             return SenderInfo(
                 id=sender_id,
@@ -227,25 +245,20 @@ class TelethonMessageMapper(MessageMapper):
             )
             
         except Exception as e:
-            logger.error(
-                f"Failed to map sender info: {e}",
-                extra={
-                    "component": "mapper",
-                    "message_id": getattr(message, 'id', 'unknown'),
-                    "error": str(e)
-                }
-            )
+            logger.error(f"Failed to map sender info: {e}")
             return None
     
-    def _get_human_sender_name(self, sender) -> str:
+    def _get_human_sender_name_fixed(self, sender) -> str:
+        """
+        ИСПРАВЛЕНО: Точно такая же логика как в рабочем скрипте.
+        """
         try:
             if sender is None:
                 return "Анонимный администратор"
             
-            # utils.get_display_name сам соберёт имя/фамилию/username
+            # Используем utils.get_display_name точно как в рабочем скрипте
             name = utils.get_display_name(sender).strip()
             if not name:
-                # на всякий случай
                 if getattr(sender, "username", None):
                     return f"@{sender.username}"
                 return f"UserID {getattr(sender, 'id', 'unknown')}"
@@ -256,7 +269,10 @@ class TelethonMessageMapper(MessageMapper):
             logger.error(f"Failed to get human sender name: {e}")
             return f"Unknown {getattr(sender, 'id', 'sender')}"
     
-    def _extract_chat_id(self, message: Message) -> Optional[int]:
+    def _extract_chat_id_from_peer(self, message: Message) -> Optional[int]:
+        """
+        Извлекаем chat_id из peer_id для fallback случаев.
+        """
         try:
             if not message.peer_id:
                 return None
@@ -264,52 +280,27 @@ class TelethonMessageMapper(MessageMapper):
             peer = message.peer_id
             
             if isinstance(peer, PeerChannel):
-                # Channel/Supergroup - use channel_id as is (positive)
                 return peer.channel_id
             elif isinstance(peer, PeerChat):
-                # Regular group - use chat_id as is (positive)
                 return peer.chat_id
             elif isinstance(peer, PeerUser):
-                # Private chat - not supported for our use case
-                return None
+                return None  # Private chat - not supported
             
             return None
             
         except Exception as e:
-            logger.error(f"Failed to extract chat ID: {e}")
+            logger.error(f"Failed to extract chat ID from peer: {e}")
             return None
     
-    async def _get_chat_details(self, message: Message) -> tuple[str, Optional[str]]:
-            peer = message.peer_id
-            
-            if isinstance(peer, PeerChannel):
-                # Try to get chat info from message
-                chat_title = None
-                if hasattr(message, 'chat') and message.chat:
-                    chat_title = getattr(message.chat, 'title', None)
-                
-                # Determine if supergroup or channel
-                if hasattr(message, 'chat') and hasattr(message.chat, 'megagroup'):
-                    if message.chat.megagroup:
-                        return "supergroup", chat_title
-                    else:
-                        return "channel", chat_title
-                else:
-                    return "supergroup", chat_title  # Default assumption
-                    
-            elif isinstance(peer, PeerChat):
-                chat_title = None
-                if hasattr(message, 'chat') and message.chat:
-                    chat_title = getattr(message.chat, 'title', None)
-                return "group", chat_title
-            
-            return "unknown", None
-            
-        except Exception as e:
-            logger.error(f"Failed to get chat details: {e}")
-            return "unknown", None
+    def _map_message_info(self, message: Message) -> MessageInfo:
+        """Map message information."""
+        return MessageInfo(
+            id=message.id,
+            text=message.message.strip()
+        )
     
     def _get_message_timestamp(self, message: Message) -> datetime:
+        """Get message timestamp with timezone handling."""
         try:
             if message.date:
                 # Ensure timezone aware
@@ -328,4 +319,5 @@ class TelethonMessageMapper(MessageMapper):
             return datetime.now(timezone.utc)
     
     def set_telegram_client(self, client):
+        """Set telegram client for entity resolution."""
         self.telegram_client = client

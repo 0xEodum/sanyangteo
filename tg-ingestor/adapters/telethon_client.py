@@ -1,5 +1,5 @@
 """
-Telethon client adapter с правильной обработкой access_hash и кеша диалогов.
+Исправленный Telethon client adapter с правильной обработкой live сообщений.
 """
 
 import asyncio
@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import List, Optional, AsyncGenerator, Callable, Any, Dict
 
-from telethon import TelegramClient
+from telethon import TelegramClient, events
 from telethon.errors import (
     FloodWaitError,
     SessionPasswordNeededError,
@@ -38,7 +38,7 @@ logger = logging.getLogger(__name__)
 
 class TelethonClientAdapter(TelegramClientInterface):
     """
-    Telethon-based implementation с правильной обработкой кеша и access_hash.
+    Исправленный Telethon-based implementation с правильной обработкой live сообщений.
     """
     
     def __init__(
@@ -79,6 +79,9 @@ class TelethonClientAdapter(TelegramClientInterface):
         # Кеш для entities с access_hash
         self._entity_cache: Dict[int, dict] = {}
         self._dialogs_loaded = False
+        
+        # Event handler reference for cleanup
+        self._event_handler = None
     
     async def connect(self) -> None:
         """Connect to Telegram and authenticate."""
@@ -119,7 +122,6 @@ class TelethonClientAdapter(TelegramClientInterface):
     async def _ensure_dialogs_loaded(self) -> None:
         """
         Загружаем все диалоги в кеш Telethon.
-        Это критически важно для правильной работы get_entity().
         """
         if self._dialogs_loaded:
             return
@@ -244,7 +246,9 @@ class TelethonClientAdapter(TelegramClientInterface):
             return None
     
     async def start_monitoring(self, chat_ids: List[int]) -> None:
-        """Start monitoring specified chats for new messages."""
+        """
+        ИСПРАВЛЕНО: Мониторинг с правильной обработкой как в рабочем скрипте.
+        """
         try:
             if self._is_monitoring:
                 logger.warning("Already monitoring, stopping previous monitoring")
@@ -300,25 +304,40 @@ class TelethonClientAdapter(TelegramClientInterface):
             
             self._monitored_chats = accessible_entities
             
-            # Import events here to avoid circular imports
-            from telethon import events
-            
-            # Register message handler с entity объектами
-            @self.client.on(events.NewMessage(chats=monitoring_entities))
-            async def message_handler(event):
-                if self._message_handler and event.message:
-                    try:
+            # ИСПРАВЛЕНО: Создаем event handler как в рабочем скрипте
+            async def message_handler(event: events.NewMessage.Event):
+                """
+                Handler для новых сообщений, точно как в рабочем скрипте.
+                """
+                try:
+                    # Проверяем что это групповое сообщение
+                    if not event.is_group:
+                        return
+                    
+                    # Получаем chat как в рабочем скрипте
+                    chat = await event.get_chat()
+                    if isinstance(chat, Channel) and not getattr(chat, "megagroup", False):
+                        return  # Пропускаем каналы, только группы и супергруппы
+                    
+                    # Передаем message в handler
+                    if self._message_handler and event.message:
                         await self._message_handler(event.message)
-                    except Exception as e:
-                        logger.error(
-                            f"Error in message handler: {e}",
-                            extra={
-                                "component": "telethon_client",
-                                "chat_id": getattr(event.message, 'chat_id', 'unknown'),
-                                "message_id": getattr(event.message, 'id', 'unknown'),
-                                "error": str(e)
-                            }
-                        )
+                        
+                except Exception as e:
+                    logger.error(
+                        f"Error in message handler: {e}",
+                        extra={
+                            "component": "telethon_client",
+                            "chat_id": getattr(event, 'chat_id', 'unknown'),
+                            "message_id": getattr(event.message, 'id', 'unknown'),
+                            "error": str(e)
+                        }
+                    )
+            
+            # Регистрируем handler с фильтром по группам как в рабочем скрипте
+            self._event_handler = self.client.on(
+                events.NewMessage(incoming=True, chats=monitoring_entities)
+            )(message_handler)
             
             self._is_monitoring = True
             logger.info(
@@ -339,7 +358,10 @@ class TelethonClientAdapter(TelegramClientInterface):
         try:
             if self._is_monitoring:
                 # Remove event handlers
-                self.client.remove_event_handler(self._message_handler)
+                if self._event_handler:
+                    self.client.remove_event_handler(self._event_handler)
+                    self._event_handler = None
+                    
                 self._is_monitoring = False
                 self._monitored_chats.clear()
                 self._message_handler = None
