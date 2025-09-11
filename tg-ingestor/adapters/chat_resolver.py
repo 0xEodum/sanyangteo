@@ -14,25 +14,13 @@ logger = logging.getLogger(__name__)
 
 
 class TelegramChatResolver(ChatResolver):
-    """
-    Resolves and validates Telegram chat configurations.
-    Ensures chats are accessible, of correct type, and properly configured.
-    """
-    
+
     def __init__(
         self,
         telegram_client: TelegramClient,
         allowed_chat_types: Optional[Set[str]] = None,
         validate_access: bool = True
     ):
-        """
-        Initialize chat resolver.
-        
-        Args:
-            telegram_client: Telegram client for chat resolution
-            allowed_chat_types: Set of allowed chat types ('group', 'supergroup', 'channel')
-            validate_access: Whether to validate chat access during validation
-        """
         self.telegram_client = telegram_client
         self.allowed_chat_types = allowed_chat_types or {'group', 'supergroup'}
         self.validate_access = validate_access
@@ -41,18 +29,6 @@ class TelegramChatResolver(ChatResolver):
         self._chat_cache: Dict[int, dict] = {}
     
     async def validate_chats(self, chat_configs: List[ChatConfig]) -> List[ChatConfig]:
-        """
-        Validate that chats are accessible and of correct type.
-        
-        Args:
-            chat_configs: List of chat configurations to validate
-            
-        Returns:
-            List of validated chat configurations (may be filtered)
-            
-        Raises:
-            ValidationError: If validation fails completely
-        """
         if not chat_configs:
             logger.warning("No chat configurations provided")
             return []
@@ -183,16 +159,6 @@ class TelegramChatResolver(ChatResolver):
         return validated_chats
     
     async def get_chat_info(self, chat_id: int) -> Optional[dict]:
-        """
-        Get detailed information about a chat.
-        
-        Args:
-            chat_id: Chat ID to get info for
-            
-        Returns:
-            Chat information dict or None if not accessible
-        """
-        # Check cache first
         if chat_id in self._chat_cache:
             logger.debug(
                 f"Using cached info for chat {chat_id}",
@@ -211,7 +177,7 @@ class TelegramChatResolver(ChatResolver):
                 # Enhance with additional validation info
                 enhanced_info = {
                     **chat_info,
-                    "validation_timestamp": "timestamp",  # In real app, use actual timestamp
+                    "validation_timestamp": "timestamp",
                     "validation_status": "valid"
                 }
                 
@@ -244,25 +210,11 @@ class TelegramChatResolver(ChatResolver):
             return None
     
     def _is_valid_chat_id(self, chat_id: int) -> bool:
-        """
-        Validate chat ID format for Telethon (MTProto).
-        
-        Args:
-            chat_id: Chat ID to validate
-            
-        Returns:
-            True if valid format, False otherwise
-        """
-        # Telethon (MTProto) chat ID rules:
-        # - Groups and supergroups: positive numbers 
-        # - Reasonable range for Telegram IDs
         
         if chat_id <= 0:
             # In MTProto format, chat IDs are positive
             return False
-        
-        # Check for reasonable range
-        # Telegram IDs are typically in range 1 to 999999999999
+
         if chat_id > 999999999999:
             return False
         
@@ -277,27 +229,14 @@ class TelegramChatResolver(ChatResolver):
         )
     
     def get_cache_stats(self) -> dict:
-        """
-        Get cache statistics.
-        
-        Returns:
-            Dictionary with cache statistics
-        """
+
         return {
             "cached_chats": len(self._chat_cache),
             "chat_ids": list(self._chat_cache.keys())
         }
     
     async def refresh_chat_info(self, chat_id: int) -> Optional[dict]:
-        """
-        Force refresh chat info from Telegram API.
-        
-        Args:
-            chat_id: Chat ID to refresh
-            
-        Returns:
-            Updated chat info or None if not accessible
-        """
+
         # Remove from cache to force refresh
         self._chat_cache.pop(chat_id, None)
         
@@ -312,15 +251,7 @@ class TelegramChatResolver(ChatResolver):
         return await self.get_chat_info(chat_id)
     
     async def validate_single_chat(self, chat_id: int) -> bool:
-        """
-        Validate a single chat ID.
-        
-        Args:
-            chat_id: Chat ID to validate
-            
-        Returns:
-            True if valid and accessible, False otherwise
-        """
+
         try:
             chat_config = ChatConfig(id=chat_id, enabled=True)
             validated = await self.validate_chats([chat_config])

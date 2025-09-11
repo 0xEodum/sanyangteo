@@ -48,19 +48,7 @@ class TelegramIngestionService(IngestionService):
         bootstrap_lookback_hours: int = 12,
         max_concurrent_messages: int = 10
     ):
-        """
-        Initialize ingestion service.
-        
-        Args:
-            telegram_client: Telegram client for receiving messages
-            publisher: Publisher for sending events to queue-writer
-            chat_resolver: Chat resolver for validation
-            message_filter: Message filter for filtering
-            message_mapper: Message mapper for DTO conversion
-            chat_configs: List of chat configurations
-            bootstrap_lookback_hours: Hours to look back during bootstrap
-            max_concurrent_messages: Maximum concurrent message processing
-        """
+
         self.telegram_client = telegram_client
         self.publisher = publisher
         self.chat_resolver = chat_resolver
@@ -81,15 +69,7 @@ class TelegramIngestionService(IngestionService):
         self._bootstrap_task: Optional[asyncio.Task] = None
     
     async def start(self) -> None:
-        """
-        Start the ingestion service.
-        
-        This includes:
-        - Connecting to Telegram
-        - Validating chat configurations
-        - Starting live monitoring
-        - Performing bootstrap if configured
-        """
+
         if self._is_running:
             logger.warning("Ingestion service already running")
             return
@@ -169,25 +149,11 @@ class TelegramIngestionService(IngestionService):
             logger.error(f"Error during service shutdown: {e}")
     
     async def get_stats(self) -> IngestionStats:
-        """
-        Get current ingestion statistics.
-        
-        Returns:
-            Current statistics
-        """
+
         return self._stats.copy()
     
     async def perform_bootstrap(self, chat_id: int, since: datetime) -> int:
-        """
-        Perform historical message bootstrap for a chat.
-        
-        Args:
-            chat_id: Chat ID to bootstrap
-            since: Fetch messages since this datetime
-            
-        Returns:
-            Number of messages processed during bootstrap
-        """
+
         logger.info(
             f"Starting bootstrap for chat {chat_id} since {since}",
             extra={
@@ -288,12 +254,7 @@ class TelegramIngestionService(IngestionService):
         )
     
     async def _handle_live_message(self, message: Message) -> None:
-        """
-        Handle incoming live message.
-        
-        Args:
-            message: Telethon Message object
-        """
+
         try:
             # Create message context for live message
             context = MessageContext(
@@ -317,16 +278,7 @@ class TelegramIngestionService(IngestionService):
             )
     
     async def _process_message(self, message: Message, context: MessageContext) -> bool:
-        """
-        Process a single message through the pipeline.
-        
-        Args:
-            message: Telethon Message object
-            context: Message processing context
-            
-        Returns:
-            True if message was successfully processed and published
-        """
+
         self._stats.increment_processed()
         
         try:

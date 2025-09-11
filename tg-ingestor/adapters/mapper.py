@@ -25,18 +25,8 @@ logger = logging.getLogger(__name__)
 
 
 class TelethonMessageMapper(MessageMapper):
-    """
-    Maps Telethon Message objects to TelegramEventDTO.
-    Handles various Telegram entity types and edge cases properly.
-    """
-    
+
     def __init__(self, telegram_client=None):
-        """
-        Initialize the mapper.
-        
-        Args:
-            telegram_client: Ссылка на клиент для асинхронных операций
-        """
         self.telegram_client = telegram_client
     
     async def map_message(
@@ -44,19 +34,6 @@ class TelethonMessageMapper(MessageMapper):
         message: Message,
         context: MessageContext
     ) -> Optional[TelegramEventDTO]:
-        """
-        Map a Telethon Message to TelegramEventDTO.
-        
-        Args:
-            message: Telethon Message object
-            context: Message processing context
-            
-        Returns:
-            Mapped TelegramEventDTO or None if mapping fails
-            
-        Raises:
-            MappingError: If critical mapping error occurs
-        """
         try:
             # Extract basic message info
             if not message.message or not isinstance(message.message, str):
@@ -261,16 +238,6 @@ class TelethonMessageMapper(MessageMapper):
             return None
     
     def _get_human_sender_name(self, sender) -> str:
-        """
-        ИСПРАВЛЕНО: Копия функции из рабочего скрипта.
-        Аккуратно формируем имя отправителя.
-        
-        Args:
-            sender: Telethon User/Chat object
-            
-        Returns:
-            Display name string
-        """
         try:
             if sender is None:
                 return "Анонимный администратор"
@@ -290,9 +257,6 @@ class TelethonMessageMapper(MessageMapper):
             return f"Unknown {getattr(sender, 'id', 'sender')}"
     
     def _extract_chat_id(self, message: Message) -> Optional[int]:
-        """
-        Extract chat ID from message peer (MTProto format - positive numbers).
-        """
         try:
             if not message.peer_id:
                 return None
@@ -316,10 +280,6 @@ class TelethonMessageMapper(MessageMapper):
             return None
     
     async def _get_chat_details(self, message: Message) -> tuple[str, Optional[str]]:
-        """
-        Get chat type and title.
-        """
-        try:
             peer = message.peer_id
             
             if isinstance(peer, PeerChannel):
@@ -350,9 +310,6 @@ class TelethonMessageMapper(MessageMapper):
             return "unknown", None
     
     def _get_message_timestamp(self, message: Message) -> datetime:
-        """
-        Get message timestamp in UTC.
-        """
         try:
             if message.date:
                 # Ensure timezone aware
@@ -371,10 +328,4 @@ class TelethonMessageMapper(MessageMapper):
             return datetime.now(timezone.utc)
     
     def set_telegram_client(self, client):
-        """
-        Set telegram client reference for async operations.
-        
-        Args:
-            client: TelegramClient instance
-        """
         self.telegram_client = client
