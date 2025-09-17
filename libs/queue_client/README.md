@@ -18,13 +18,13 @@
 
 ```bash
 # Базовая установка (Redis)
-pip install -e libs/queue-client
+pip install -e libs/queue_client
 
 # С поддержкой Kafka
-pip install -e "libs/queue-client[kafka]"
+pip install -e "libs/queue_client[kafka]"
 
 # С поддержкой всех очередей
-pip install -e "libs/queue-client[all]"
+pip install -e "libs/queue_client[all]"
 ```
 
 ### Использование
@@ -217,16 +217,16 @@ print(health)
 
 ```bash
 # Установка зависимостей разработки
-pip install -e "libs/queue-client[dev]"
+pip install -e "libs/queue_client[dev]"
 
 # Запуск тестов
-pytest libs/queue-client/tests/
+pytest libs/queue_client/tests/
 
 # Линтинг
-black libs/queue-client/
-isort libs/queue-client/
-flake8 libs/queue-client/
-mypy libs/queue-client/
+black libs/queue_client/
+isort libs/queue_client/
+flake8 libs/queue_client/
+mypy libs/queue_client/
 ```
 
 ## Roadmap

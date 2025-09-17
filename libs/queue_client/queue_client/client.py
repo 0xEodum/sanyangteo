@@ -6,7 +6,7 @@
 import logging
 from typing import AsyncIterator, Optional
 
-from interfaces import (
+from .interfaces import (
     QueueWriter, 
     QueueReader, 
     QueueMessage, 
