@@ -161,7 +161,7 @@ class ProcessingConfig(BaseModel):
 class LoggingConfig(BaseModel):
     """Logging configuration."""
     model_config = ConfigDict(extra='forbid')
-    
+
     level: str = Field(
         default="INFO",
         description="Logging level"
@@ -183,16 +183,36 @@ class LoggingConfig(BaseModel):
         return v.upper()
 
 
+class SecurityConfig(BaseModel):
+    """Security configuration for inter-service communication."""
+
+    model_config = ConfigDict(extra='forbid')
+
+    shared_token: Optional[str] = Field(
+        default=None,
+        description="Shared authentication token loaded from secrets or file"
+    )
+    shared_token_file: Optional[str] = Field(
+        default=None,
+        description="Path to file containing shared authentication token"
+    )
+
+    def get_token(self) -> Optional[str]:
+        """Return the loaded shared token if available."""
+        return self.shared_token
+
+
 class AppConfig(BaseModel):
     """Main application configuration."""
     model_config = ConfigDict(extra='forbid')
-    
+
     telegram: TelegramConfig = Field(..., description="Telegram API configuration")
     chats: ChatsConfig = Field(..., description="Chat monitoring configuration")
     bootstrap: BootstrapConfig = Field(default_factory=BootstrapConfig)
     queue: QueueConfig = Field(default_factory=QueueConfig)
     processing: ProcessingConfig = Field(default_factory=ProcessingConfig)
     logging: LoggingConfig = Field(default_factory=LoggingConfig)
+    security: SecurityConfig = Field(default_factory=SecurityConfig)
 
 
 def load_config(config_path: Optional[str] = None) -> AppConfig:
@@ -220,6 +240,7 @@ def load_config(config_path: Optional[str] = None) -> AppConfig:
         
         # Load secrets from Docker secrets
         yaml_data = _load_secrets(yaml_data)
+        yaml_data = _load_security_token_from_file(yaml_data)
         
         # Validate and create config
         config = AppConfig(**yaml_data)
@@ -272,10 +293,14 @@ def _apply_env_overrides(config_data: dict) -> dict:
         # Processing
         'PROCESSING_MAX_CONCURRENT': 'processing.max_concurrent_messages',
         'PROCESSING_ALLOW_BOTS': 'processing.allow_bots',
-        
+
         # Logging
         'LOG_LEVEL': 'logging.level',
-        'LOG_JSON': 'logging.json_format'
+        'LOG_JSON': 'logging.json_format',
+
+        # Security
+        'QUEUE_SHARED_TOKEN': 'security.shared_token',
+        'QUEUE_SHARED_TOKEN_FILE': 'security.shared_token_file'
     }
     
     for env_var, config_path in env_mappings.items():
@@ -292,6 +317,7 @@ def _load_secrets(config_data: dict) -> dict:
     secret_mappings = {
         '/run/secrets/telegram_api_id': 'telegram.api_id',
         '/run/secrets/telegram_api_hash': 'telegram.api_hash',
+        '/run/secrets/queue_token': 'security.shared_token',
     }
     
     for secret_file, config_path in secret_mappings.items():
@@ -308,6 +334,36 @@ def _load_secrets(config_data: dict) -> dict:
         except Exception as e:
             logger.warning(f"Failed to load secret from {secret_file}: {e}")
     
+    return config_data
+
+
+def _load_security_token_from_file(config_data: dict) -> dict:
+    """Load shared security token from file path specified in config."""
+
+    security_config = config_data.get('security')
+    if not isinstance(security_config, dict):
+        return config_data
+
+    token_file = security_config.get('shared_token_file')
+    if not token_file:
+        return config_data
+
+    try:
+        token_path = Path(token_file)
+        if not token_path.exists():
+            logger.warning(f"Shared token file not found: {token_file}")
+            return config_data
+
+        token_value = token_path.read_text(encoding='utf-8').strip()
+        if not token_value:
+            logger.warning(f"Shared token file is empty: {token_file}")
+            return config_data
+
+        security_config['shared_token'] = token_value
+        logger.debug(f"Loaded shared token from {token_file}")
+    except Exception as e:
+        logger.warning(f"Failed to load shared token from {token_file}: {e}")
+
     return config_data
 
 
