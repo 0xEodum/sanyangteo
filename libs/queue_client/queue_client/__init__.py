@@ -5,9 +5,9 @@ Unified Queue Client Library
 Замена HTTP gateway подхода на прямое подключение к очередям.
 """
 
-from interfaces import QueueMessage, QueueResult, QueueType
-from factory import QueueFactory
-from client import QueueClient
+from .interfaces import QueueMessage, QueueResult, QueueType
+from .factory import QueueFactory
+from .client import QueueClient
 
 # Удобная функция для быстрого создания
 async def create_queue_client(queue_type: str, config: dict) -> 'QueueClient':

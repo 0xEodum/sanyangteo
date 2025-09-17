@@ -11,8 +11,8 @@ RUN apt-get update && apt-get install -y \
 WORKDIR /build
 
 # Копируем и устанавливаем shared library
-COPY libs/queue-client/ ./libs/queue-client/
-RUN pip install --no-cache-dir ./libs/queue-client/
+COPY libs/queue_client/ ./libs/queue_client/
+RUN pip install --no-cache-dir ./libs/queue_client/
 
 # Копируем и устанавливаем зависимости сервиса  
 COPY services/tg-ingestor/requirements.txt ./

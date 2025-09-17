@@ -11,7 +11,7 @@ from typing import AsyncIterator, Dict, Optional
 import redis.asyncio as redis
 from redis.exceptions import RedisError, ConnectionError
 
-from interfaces import (
+from ..interfaces import (
     QueueWriter, 
     QueueReader, 
     QueueMessage, 

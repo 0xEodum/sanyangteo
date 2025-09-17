@@ -4,8 +4,8 @@ Factory для создания queue writers и readers
 
 from typing import Dict, Any
 
-from interfaces import QueueType, QueueWriter, QueueReader, QueueConfigError
-from strategies.redis_strategy import RedisQueueWriter, RedisQueueReader
+from .interfaces import QueueType, QueueWriter, QueueReader, QueueConfigError
+from .strategies.redis_strategy import RedisQueueWriter, RedisQueueReader
 
 
 class QueueFactory:
