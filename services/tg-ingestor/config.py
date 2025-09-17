@@ -1,12 +1,12 @@
 """
-Configuration management for tg-ingestor service.
-Loads and validates configuration from YAML files using Pydantic.
+Configuration management for tg-ingestor service - CLEAN VERSION
+Убраны все legacy и compatibility части
 """
 
 import os
 import logging
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 
 import yaml
 from pydantic import BaseModel, Field, validator, ConfigDict
@@ -20,7 +20,7 @@ class TelegramConfig(BaseModel):
     model_config = ConfigDict(extra='forbid')
     
     session: str = Field(
-        default="/data/session.session",
+        default="/app/data/session.session",
         description="Path to Telethon session file"
     )
     api_id: int = Field(
@@ -60,7 +60,7 @@ class ChatsConfig(BaseModel):
     ids: List[int] = Field(
         ...,
         min_items=1,
-        description="List of chat IDs to monitor (negative for groups/supergroups)"
+        description="List of chat IDs to monitor (positive for MTProto format)"
     )
     
     @validator('ids')
@@ -72,7 +72,6 @@ class ChatsConfig(BaseModel):
                     f"Chat ID {chat_id} should be positive for Telethon (MTProto format). "
                     f"Use the ID from your list_dialogs.py script directly."
                 )
-            # Reasonable range check for Telegram IDs
             if chat_id > 999999999999:  # Very large number sanity check
                 logger.warning(f"Chat ID {chat_id} seems unusually large, double-check it")
         return v
@@ -100,63 +99,35 @@ class BootstrapConfig(BaseModel):
     )
 
 
-class OutputConfig(BaseModel):
-    """Output configuration for queue-writer connection."""
+class QueueConfig(BaseModel):
+    """Queue configuration using shared library."""
     model_config = ConfigDict(extra='forbid')
     
-    endpoint: str = Field(
-        default="http://queue-writer:8080/events",
-        description="Queue-writer events endpoint URL"
+    type: str = Field(
+        default="redis",
+        description="Queue type: redis"
     )
-    timeout_ms: int = Field(
-        default=2000,
-        ge=500,
-        le=30000,
-        description="HTTP request timeout in milliseconds"
+    queue_name: str = Field(
+        default="telegram_events",
+        description="Name of the queue for telegram events"
     )
-    max_retries: int = Field(
-        default=5,
-        ge=0,
-        le=10,
-        description="Maximum number of retry attempts"
-    )
-    retry_backoff_ms: int = Field(
-        default=500,
-        ge=100,
-        le=5000,
-        description="Initial backoff time between retries in milliseconds"
-    )
-    max_backoff_ms: int = Field(
-        default=10000,
-        ge=1000,
-        le=60000,
-        description="Maximum backoff time between retries in milliseconds"
+    config: Dict[str, Any] = Field(
+        default_factory=lambda: {
+            "url": "redis://redis:6379/0",
+            "dedup_ttl_seconds": 604800,
+            "maxlen_approx": 1000000,
+            "max_connections": 10,
+            "socket_timeout": 5.0
+        },
+        description="Redis-specific configuration"
     )
     
-    @validator('endpoint')
-    def validate_endpoint(cls, v):
-        """Validate endpoint URL format."""
-        if not v.startswith(('http://', 'https://')):
-            raise ValueError("Endpoint must start with http:// or https://")
-        if not v.endswith('/events'):
-            raise ValueError("Endpoint must end with /events")
-        return v
-
-
-class SecurityConfig(BaseModel):
-    """Security configuration."""
-    model_config = ConfigDict(extra='forbid')
-    
-    shared_token_file: str = Field(
-        default="/run/secrets/queue_token",
-        description="Path to shared token file for queue-writer authentication"
-    )
-    
-    @validator('shared_token_file')
-    def validate_token_file_path(cls, v):
-        if not v:
-            raise ValueError("Token file path cannot be empty")
-        return v
+    @validator('type')
+    def validate_queue_type(cls, v):
+        """Validate queue type."""
+        if v.lower() != "redis":
+            raise ValueError("Only 'redis' queue type is supported in this version")
+        return v.lower()
 
 
 class ProcessingConfig(BaseModel):
@@ -219,8 +190,7 @@ class AppConfig(BaseModel):
     telegram: TelegramConfig = Field(..., description="Telegram API configuration")
     chats: ChatsConfig = Field(..., description="Chat monitoring configuration")
     bootstrap: BootstrapConfig = Field(default_factory=BootstrapConfig)
-    output: OutputConfig = Field(default_factory=OutputConfig)
-    security: SecurityConfig = Field(default_factory=SecurityConfig)
+    queue: QueueConfig = Field(default_factory=QueueConfig)
     processing: ProcessingConfig = Field(default_factory=ProcessingConfig)
     logging: LoggingConfig = Field(default_factory=LoggingConfig)
 
@@ -228,17 +198,6 @@ class AppConfig(BaseModel):
 def load_config(config_path: Optional[str] = None) -> AppConfig:
     """
     Load configuration from YAML file with environment variable overrides.
-    
-    Args:
-        config_path: Path to config file, defaults to CONFIG_PATH env var or ./config.yml
-        
-    Returns:
-        Loaded and validated configuration
-        
-    Raises:
-        FileNotFoundError: If config file not found
-        ValueError: If config validation fails
-        yaml.YAMLError: If YAML parsing fails
     """
     # Determine config file path
     if config_path is None:
@@ -259,7 +218,7 @@ def load_config(config_path: Optional[str] = None) -> AppConfig:
         # Apply environment variable overrides
         yaml_data = _apply_env_overrides(yaml_data)
         
-        # Load secrets if running in Docker
+        # Load secrets from Docker secrets
         yaml_data = _load_secrets(yaml_data)
         
         # Validate and create config
@@ -272,7 +231,8 @@ def load_config(config_path: Optional[str] = None) -> AppConfig:
                 "config_file": str(config_file),
                 "monitored_chats": len(config.chats.ids),
                 "bootstrap_enabled": config.bootstrap.enabled,
-                "output_endpoint": config.output.endpoint
+                "queue_type": config.queue.type,
+                "queue_name": config.queue.queue_name
             }
         )
         
@@ -290,32 +250,30 @@ def load_config(config_path: Optional[str] = None) -> AppConfig:
 def _apply_env_overrides(config_data: dict) -> dict:
     """
     Apply environment variable overrides to config data.
-    
-    Supports dot notation for nested keys:
-    - TELEGRAM_API_ID -> telegram.api_id
-    - CHATS_IDS -> chats.ids (comma-separated)
-    - OUTPUT_ENDPOINT -> output.endpoint
-    
-    Args:
-        config_data: Base configuration data
-        
-    Returns:
-        Configuration data with environment overrides applied
     """
-    # Environment variable mappings
     env_mappings = {
+        # Telegram
         'TELEGRAM_API_ID': 'telegram.api_id',
         'TELEGRAM_API_HASH': 'telegram.api_hash',
         'TELEGRAM_SESSION': 'telegram.session',
+        
+        # Chats
         'CHATS_IDS': 'chats.ids',
+        
+        # Bootstrap
         'BOOTSTRAP_LOOKBACK_HOURS': 'bootstrap.lookback_hours',
         'BOOTSTRAP_ENABLED': 'bootstrap.enabled',
-        'OUTPUT_ENDPOINT': 'output.endpoint',
-        'OUTPUT_TIMEOUT_MS': 'output.timeout_ms',
-        'OUTPUT_MAX_RETRIES': 'output.max_retries',
-        'SHARED_TOKEN_FILE': 'security.shared_token_file',
+        
+        # Queue
+        'QUEUE_TYPE': 'queue.type',
+        'QUEUE_NAME': 'queue.queue_name',
+        'QUEUE_URL': 'queue.config.url',
+        
+        # Processing
         'PROCESSING_MAX_CONCURRENT': 'processing.max_concurrent_messages',
         'PROCESSING_ALLOW_BOTS': 'processing.allow_bots',
+        
+        # Logging
         'LOG_LEVEL': 'logging.level',
         'LOG_JSON': 'logging.json_format'
     }
@@ -330,19 +288,10 @@ def _apply_env_overrides(config_data: dict) -> dict:
 
 
 def _load_secrets(config_data: dict) -> dict:
-    """
-    Load secrets from Docker secrets files if available.
-    
-    Args:
-        config_data: Configuration data
-        
-    Returns:
-        Configuration data with secrets loaded
-    """
+    """Load secrets from Docker secrets files if available."""
     secret_mappings = {
         '/run/secrets/telegram_api_id': 'telegram.api_id',
         '/run/secrets/telegram_api_hash': 'telegram.api_hash',
-        '/run/secrets/queue_token': '_queue_token_content'  # Special handling
     }
     
     for secret_file, config_path in secret_mappings.items():
@@ -353,11 +302,7 @@ def _load_secrets(config_data: dict) -> dict:
                     secret_value = f.read().strip()
                 
                 if secret_value:
-                    if config_path == '_queue_token_content':
-                        # Don't store token in config, just validate file exists
-                        continue
-                    else:
-                        _set_nested_value(config_data, config_path, secret_value)
+                    _set_nested_value(config_data, config_path, secret_value)
                     logger.debug(f"Loaded secret from {secret_file}")
                 
         except Exception as e:
@@ -367,14 +312,7 @@ def _load_secrets(config_data: dict) -> dict:
 
 
 def _set_nested_value(data: dict, path: str, value: str) -> None:
-    """
-    Set a nested dictionary value using dot notation.
-    
-    Args:
-        data: Dictionary to modify
-        path: Dot-separated path (e.g., 'telegram.api_id')
-        value: Value to set (string, will be converted to appropriate type)
-    """
+    """Set a nested dictionary value using dot notation."""
     keys = path.split('.')
     current = data
     
@@ -390,15 +328,7 @@ def _set_nested_value(data: dict, path: str, value: str) -> None:
 
 
 def _convert_env_value(value: str):
-    """
-    Convert environment variable string to appropriate Python type.
-    
-    Args:
-        value: String value from environment
-        
-    Returns:
-        Converted value (bool, int, list, or str)
-    """
+    """Convert environment variable string to appropriate Python type."""
     # Boolean conversion
     if value.lower() in ('true', 'yes', '1', 'on'):
         return True
@@ -423,30 +353,3 @@ def _convert_env_value(value: str):
     
     # Return as string
     return value
-
-
-def validate_secrets_exist(config: AppConfig) -> None:
-    """
-    Validate that required secret files exist.
-    
-    Args:
-        config: Application configuration
-        
-    Raises:
-        FileNotFoundError: If required secrets are missing
-    """
-    required_secrets = [
-        config.security.shared_token_file
-    ]
-    
-    missing_secrets = []
-    for secret_file in required_secrets:
-        if not Path(secret_file).exists():
-            missing_secrets.append(secret_file)
-    
-    if missing_secrets:
-        raise FileNotFoundError(
-            f"Required secret files not found: {', '.join(missing_secrets)}"
-        )
-    
-    logger.info("All required secrets found")

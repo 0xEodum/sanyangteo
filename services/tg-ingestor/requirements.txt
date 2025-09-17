@@ -1,0 +1,23 @@
+pydantic==2.5.0
+pydantic-settings==2.1.0
+
+# Telegram client
+telethon==1.30.3
+
+# Queue client library - НОВОЕ
+redis[hiredis]>=4.6.0
+
+# Configuration and serialization
+PyYAML==6.0.1
+
+# Async utilities
+asyncio-throttle==1.0.2
+
+# Logging and monitoring
+structlog==23.2.0
+
+# Cryptography (required by Telethon)
+cryptography==42.0.0
+
+# Date/time utilities
+python-dateutil==2.8.2

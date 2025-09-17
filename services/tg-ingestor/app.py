@@ -1,6 +1,6 @@
 """
-Main application module for tg-ingestor service.
-Implements dependency injection and service composition following SOLID principles.
+Main application module for tg-ingestor service - CLEAN VERSION
+Только queue library, без legacy кода
 """
 
 import asyncio
@@ -10,7 +10,7 @@ import sys
 from contextlib import asynccontextmanager
 from typing import Optional
 
-from config import load_config, validate_secrets_exist, AppConfig
+from config import load_config, AppConfig
 from telemetry.logger import setup_logging
 
 # Domain imports
@@ -18,7 +18,7 @@ from domain.dto import ChatConfig
 
 # Adapter imports
 from adapters.telethon_client import TelethonClientAdapter
-from adapters.http_publisher import HTTPPublisher, TokenLoader
+from adapters.queue_publisher import QueuePublisher  # ТОЛЬКО новый publisher
 from adapters.chat_resolver import TelegramChatResolver
 from adapters.filters import create_default_filter
 from adapters.mapper import TelethonMessageMapper
@@ -32,8 +32,7 @@ logger = logging.getLogger(__name__)
 
 class TgIngestorApplication:
     """
-    Main application class that composes all dependencies.
-    Follows Dependency Inversion Principle and manages service lifecycle.
+    Чистое приложение с queue library
     """
     
     def __init__(self, config: AppConfig):
@@ -45,9 +44,9 @@ class TgIngestorApplication:
         """
         self.config = config
         
-        # Dependencies (will be initialized in setup)
+        # Dependencies
         self.telegram_client: Optional[TelethonClientAdapter] = None
-        self.publisher: Optional[HTTPPublisher] = None
+        self.publisher: Optional[QueuePublisher] = None
         self.chat_resolver: Optional[TelegramChatResolver] = None
         self.message_filter = None
         self.message_mapper: Optional[TelethonMessageMapper] = None
@@ -68,16 +67,10 @@ class TgIngestorApplication:
     
     async def setup(self) -> None:
         """
-        Setup all service dependencies using dependency injection.
-        
-        Raises:
-            Exception: If setup fails
+        Setup all service dependencies.
         """
         try:
-            logger.info("Setting up tg-ingestor application")
-            
-            # Validate secrets exist
-            validate_secrets_exist(self.config)
+            logger.info("Setting up tg-ingestor with queue library")
             
             # Initialize Telegram client
             self.telegram_client = TelethonClientAdapter(
@@ -90,19 +83,15 @@ class TgIngestorApplication:
                 flood_sleep_threshold=self.config.telegram.flood_sleep_threshold
             )
             
-            # Initialize HTTP publisher
-            shared_token = TokenLoader.load_token_from_file(
-                self.config.security.shared_token_file
+            # Initialize Queue Publisher
+            self.publisher = QueuePublisher(
+                queue_type=self.config.queue.type,
+                queue_config=self.config.queue.config,
+                queue_name=self.config.queue.queue_name
             )
             
-            self.publisher = HTTPPublisher(
-                endpoint=self.config.output.endpoint,
-                shared_token=shared_token,
-                timeout_ms=self.config.output.timeout_ms,
-                max_retries=self.config.output.max_retries,
-                retry_backoff_ms=self.config.output.retry_backoff_ms,
-                max_backoff_ms=self.config.output.max_backoff_ms
-            )
+            # Connect to publisher
+            await self.publisher.connect()
             
             # Initialize chat resolver
             self.chat_resolver = TelegramChatResolver(
@@ -117,9 +106,9 @@ class TgIngestorApplication:
                 max_text_length=self.config.processing.max_text_length
             )
             
-            # ИСПРАВЛЕНО: Initialize message mapper с ссылкой на telegram_client
+            # Initialize message mapper
             self.message_mapper = TelethonMessageMapper()
-            # После создания telegram_client передаем ему ссылку для async операций
+            # Set telegram client reference after client is created
             self.message_mapper.set_telegram_client(self.telegram_client.client)
             
             # Convert chat IDs to ChatConfig objects
@@ -140,7 +129,15 @@ class TgIngestorApplication:
                 max_concurrent_messages=self.config.processing.max_concurrent_messages
             )
             
-            logger.info("Application setup completed successfully")
+            logger.info(
+                "Application setup completed",
+                extra={
+                    "component": "app",
+                    "queue_type": self.config.queue.type,
+                    "queue_name": self.config.queue.queue_name,
+                    "monitored_chats": len(self.config.chats.ids)
+                }
+            )
             
         except Exception as e:
             logger.error(f"Application setup failed: {e}")
@@ -156,7 +153,7 @@ class TgIngestorApplication:
             if self.ingestion_service:
                 await self.ingestion_service.stop()
             
-            # Close HTTP publisher
+            # Close publisher
             if self.publisher:
                 await self.publisher.close()
             
@@ -172,13 +169,11 @@ class TgIngestorApplication:
     async def run(self) -> None:
         """
         Run the application.
-        
-        This method starts the ingestion service and waits for shutdown signal.
         """
         if not self.ingestion_service:
             raise RuntimeError("Application not setup. Call setup() first.")
         
-        logger.info("Starting tg-ingestor application")
+        logger.info("Starting tg-ingestor with queue library")
         
         try:
             # Start ingestion service
@@ -189,7 +184,8 @@ class TgIngestorApplication:
                 extra={
                     "component": "app",
                     "monitored_chats": len(self.config.chats.ids),
-                    "bootstrap_enabled": self.config.bootstrap.enabled
+                    "bootstrap_enabled": self.config.bootstrap.enabled,
+                    "queue_type": self.config.queue.type
                 }
             )
             
@@ -200,13 +196,11 @@ class TgIngestorApplication:
             logger.error(f"Application error: {e}")
             raise
         finally:
-            # Ensure cleanup happens
             await self.cleanup()
     
     async def _wait_for_shutdown(self) -> None:
         """Wait for shutdown signal or service failure."""
         try:
-            # Monitor service health and wait for shutdown
             while not self._shutdown_event.is_set():
                 # Check if ingestion service is still running
                 if self.ingestion_service and not self.ingestion_service._is_running:
@@ -235,8 +229,6 @@ class TgIngestorApplication:
     async def lifespan(self):
         """
         Context manager for application lifecycle.
-        
-        Handles setup and cleanup automatically.
         """
         try:
             await self.setup()
@@ -247,9 +239,6 @@ class TgIngestorApplication:
     async def get_stats(self) -> dict:
         """
         Get application statistics.
-        
-        Returns:
-            Dictionary with current statistics
         """
         stats = {
             "application": "tg-ingestor",
@@ -257,9 +246,18 @@ class TgIngestorApplication:
             "config": {
                 "monitored_chats": len(self.config.chats.ids),
                 "bootstrap_enabled": self.config.bootstrap.enabled,
-                "max_concurrent": self.config.processing.max_concurrent_messages
+                "max_concurrent": self.config.processing.max_concurrent_messages,
+                "queue_type": self.config.queue.type,
+                "queue_name": self.config.queue.queue_name
             }
         }
+        
+        # Add publisher health
+        if self.publisher:
+            try:
+                stats["publisher_healthy"] = await self.publisher.check_health()
+            except Exception as e:
+                stats["publisher_error"] = str(e)
         
         # Add ingestion service stats if available
         if self.ingestion_service:
@@ -283,9 +281,6 @@ class TgIngestorApplication:
 async def create_app() -> TgIngestorApplication:
     """
     Factory function to create and setup the application.
-    
-    Returns:
-        Configured and setup application instance
     """
     # Load configuration
     config = load_config()
@@ -321,7 +316,14 @@ async def main() -> None:
             enable_correlation=config.logging.enable_correlation
         )
         
-        logger.info("Starting tg-ingestor service")
+        logger.info(
+            "Starting tg-ingestor with queue library",
+            extra={
+                "component": "app",
+                "queue_type": config.queue.type,
+                "queue_name": config.queue.queue_name
+            }
+        )
         
         # Create and run application
         async with TgIngestorApplication(config).lifespan() as app:
@@ -338,17 +340,17 @@ async def main() -> None:
 async def health_check() -> bool:
     """
     Simple health check function for container health checks.
-    
-    Returns:
-        True if service appears healthy, False otherwise
     """
     try:
-        # Basic health check - could be expanded
         config = load_config()
         
-        # Check if required files exist
-        validate_secrets_exist(config)
+        # Basic validation
+        if not config.telegram.api_id or not config.telegram.api_hash:
+            return False
         
+        if not config.chats.ids:
+            return False
+            
         return True
         
     except Exception as e:
@@ -359,7 +361,6 @@ async def health_check() -> bool:
 if __name__ == "__main__":
     # Check if this is a health check call
     if len(sys.argv) > 1 and sys.argv[1] == "healthcheck":
-        # Simple health check for Docker
         import asyncio
         
         async def run_health_check():

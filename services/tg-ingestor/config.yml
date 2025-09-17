@@ -19,27 +19,30 @@ bootstrap:
   enabled: true  # Whether to perform bootstrap
   max_messages_per_chat: null  # No limit by default
 
-# Output configuration (connection to queue-writer)
-output:
-  endpoint: "http://queue-writer:8080/events"
-  timeout_ms: 2000  # Request timeout
-  max_retries: 5  # Maximum retry attempts
-  retry_backoff_ms: 500  # Initial backoff between retries
-  max_backoff_ms: 10000  # Maximum backoff time
-
+queue:
+  type: "redis"
+  queue_name: "telegram_events"
+  config:
+    url: "redis://redis:6379/0"
+    dedup_ttl_seconds: 604800
+    maxlen_approx: 1000000
+    max_connections: 10
+    socket_timeout: 5.0
+    socket_connect_timeout: 5.0
 # Security configuration
+
 security:
   shared_token_file: "/run/secrets/queue_token"
 
 # Message processing configuration
 processing:
-  max_concurrent_messages: 10  # Max concurrent message processing
-  allow_bots: true  # Process messages from bots
-  max_text_length: 16384  # Maximum message text length
-  min_text_length: 1  # Minimum message text length
+  max_concurrent_messages: 10
+  allow_bots: true
+  max_text_length: 16384
+  min_text_length: 1
 
 # Logging configuration
 logging:
-  level: "INFO"  # DEBUG, INFO, WARNING, ERROR, CRITICAL
-  json_format: true  # Enable JSON log formatting
-  enable_correlation: true  # Enable correlation IDs
+  level: "INFO"
+  json_format: true
+  enable_correlation: true
