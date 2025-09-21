@@ -1,0 +1,127 @@
+# Message Preprocessor Service Configuration
+
+# Processing mode: prod or test
+mode: "test"
+
+# Input queue configuration (receives from tg-ingestor)
+input_queue:
+  type: "redis"
+  queue_name: "telegram_events"
+  consumer_group: "message_preprocessor"
+  config:
+    url: "redis://redis:6379/0"
+    max_connections: 10
+    socket_timeout: 5.0
+
+# Output queue configuration (sends processed data)
+output_queue:
+  type: "redis"
+  queue_name: "preprocessed_data"
+  config:
+    url: "redis://redis:6379/0"
+    max_connections: 10
+    socket_timeout: 5.0
+
+# Redis for key usage counters
+redis_counters:
+  url: "redis://redis:6379/1"  # Separate DB for counters
+  key_prefix: "llm_key_usage:"
+
+# Retry configuration for test mode
+retry:
+  delay_seconds: 300  # 5 minutes when all models exhausted
+  max_attempts_per_model: 2
+
+# LLM request configuration
+llm:
+  timeout_seconds: 30
+  max_tokens: 1000
+  temperature: 0.1
+
+# Message processing configuration
+processing:
+  max_concurrent_messages: 5
+  batch_size: 1
+
+# Parsing schemas configuration
+parsing_schemas:
+  # ORDER schemas
+  order:
+    v1:
+      fields:
+        - name: "plant_name"
+          type: "string"
+          required: true
+        - name: "height"
+          type: "number_range"
+          required: false
+        - name: "height_unit"
+          type: "string"
+          required: false
+        - name: "quantity"
+          type: "number"
+          required: true
+        - name: "quantity_unit"
+          type: "string"
+          required: true
+    
+    # Future schema with containers
+    v2:
+      fields:
+        - name: "plant_name"
+          type: "string"
+          required: true
+        - name: "height"
+          type: "number_range"
+          required: false
+        - name: "height_unit"
+          type: "string"
+          required: false
+        - name: "quantity"
+          type: "number"
+          required: true
+        - name: "quantity_unit"
+          type: "string"
+          required: true
+        - name: "container_type"
+          type: "string"
+          required: false
+        - name: "container_size"
+          type: "number"
+          required: false
+
+  # OFFER schemas
+  offer:
+    v1:
+      fields:
+        - name: "city"
+          type: "string"
+          required: false
+        - name: "company_name"
+          type: "string"
+          required: false
+        - name: "phone"
+          type: "phone"
+          required: false
+        - name: "telegram"
+          type: "telegram"
+          required: false
+        - name: "email"
+          type: "email"
+          required: false
+
+  # Active schema versions
+  active_order_schema: "v1"
+  active_offer_schema: "v1"
+
+# Logging configuration
+logging:
+  level: "INFO"
+  json_format: true
+  enable_correlation: true
+
+# External dependencies paths (mounted from Docker)
+dependencies:
+  sys_prompt_file: "/app/llm_dependencies/sys_prompt.txt"
+  api_keys_file: "/app/llm_dependencies/api_keys.yml"
+  api_urls_file: "/app/llm_dependencies/api_urls.yml"
