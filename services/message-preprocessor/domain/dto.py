@@ -204,12 +204,37 @@ class ProcessingStats(BaseModel):
 
 
 class ModelConfig(BaseModel):
-    """Single model configuration"""
+    """Single model configuration with optional extra parameters"""
     model_config = ConfigDict(extra='forbid')
     
     name: str = Field(..., description="Model name")
     url: str = Field(..., description="API URL")
     provider: str = Field(..., description="Provider name")
+    
+    # Новое опциональное поле для дополнительных параметров
+    extra_body: Optional[Dict[str, Any]] = Field(
+        None, 
+        description="Extra parameters for API request (e.g., OpenRouter provider settings)"
+    )
+    
+    # Альтернативно можно добавить более гибкое поле для любых дополнительных параметров к запросу
+    request_params: Optional[Dict[str, Any]] = Field(
+        None,
+        description="Additional parameters to pass to API request"
+    )
+    
+    def get_request_extras(self) -> Dict[str, Any]:
+        """Get dictionary of extra parameters for API request"""
+        extras = {}
+        
+        if self.extra_body:
+            extras["extra_body"] = self.extra_body
+            
+        if self.request_params:
+            # Объединяем request_params с extras (request_params приоритетнее)
+            extras.update(self.request_params)
+            
+        return extras
 
 
 class FieldConfig(BaseModel):

@@ -339,11 +339,12 @@ class TelegramPreprocessingService(MessagePreprocessor):
                 }
             )
     
+
     async def _try_single_model(
         self,
         telegram_message: TelegramEventDTO,
         context: ProcessingContext,
-        model_config
+        model_config  # ModelConfig with extra_body support
     ) -> Optional[PreprocessedMessageDTO]:
         """Try processing with a single model."""
         
@@ -370,13 +371,27 @@ class TelegramPreprocessingService(MessagePreprocessor):
                     user_message=user_message
                 )
                 
-                # Send LLM request
+                # Send LLM request with model_config for extra parameters
                 llm_response = await self.llm_client.send_request(
                     request=llm_request,
                     api_key=api_key_config.key,
                     api_url=model_config.url,
-                    provider=model_config.provider
+                    provider=model_config.provider,
+                    model_config=model_config  # ✅ Передаем model_config
                 )
+                
+                # Log extra parameters usage if present
+                extra_params = model_config.get_request_extras()
+                if extra_params:
+                    logger.debug(
+                        f"Used extra parameters for model {model_config.name}",
+                        extra={
+                            "component": "preprocessing_service",
+                            "model": model_config.name,
+                            "extra_params_keys": list(extra_params.keys()),
+                            "has_extra_body": "extra_body" in extra_params
+                        }
+                    )
                 
                 # Record key usage
                 await self.key_manager.record_key_usage(

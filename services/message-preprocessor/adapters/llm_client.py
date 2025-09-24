@@ -41,11 +41,12 @@ class OpenAICompatibleClient(LLMClient):
         self._client_cache: Dict[str, AsyncOpenAI] = {}
 
     async def send_request(
-            self,
-            request: LLMRequest,
-            api_key: str,
-            api_url: str,
-            provider: str
+        self,
+        request: LLMRequest,
+        api_key: str,
+        api_url: str,
+        provider: str,
+        model_config: Optional['ModelConfig'] = None  # Добавляем model_config
     ) -> LLMResponse:
         """
         Send request to LLM API using OpenAI library.
@@ -55,6 +56,7 @@ class OpenAICompatibleClient(LLMClient):
             api_key: API key for authentication
             api_url: API endpoint URL
             provider: Provider name for logging
+            model_config: Model configuration with extra parameters
 
         Returns:
             LLM response with content or error
@@ -65,8 +67,13 @@ class OpenAICompatibleClient(LLMClient):
             # Get or create client for this API URL
             client = self._get_client(api_url, api_key)
 
-            # Prepare request parameters based on provider
+            # Prepare base request parameters
             request_params = self._prepare_request_params(request, provider)
+            
+            # Add model-specific extra parameters if provided
+            if model_config:
+                extra_params = model_config.get_request_extras()
+                request_params.update(extra_params)
 
             logger.debug(
                 f"Sending LLM request to {provider}",
@@ -76,11 +83,12 @@ class OpenAICompatibleClient(LLMClient):
                     "model": request.model_name,
                     "api_url": api_url,
                     "message_count": len(request.messages),
-                    "max_tokens": request.max_tokens
+                    "max_tokens": request.max_tokens,
+                    "has_extra_params": bool(model_config and model_config.get_request_extras())
                 }
             )
 
-            # Make the API call
+            # Make the API call with all parameters
             completion = await client.chat.completions.create(
                 timeout=self.timeout_seconds,
                 **request_params
@@ -240,12 +248,14 @@ class OpenAICompatibleClient(LLMClient):
         """Get or create OpenAI client for the given URL."""
         # Use URL as cache key (API key changes but URL is stable)
         if api_url not in self._client_cache:
-            # Determine base URL from endpoint
-            if "openai.com" in api_url:
+            
+            # Теперь api_url уже является base_url (без /chat/completions)
+            # Специальная обработка только для стандартного OpenAI API
+            if api_url == "https://api.openai.com/v1":
                 base_url = None  # Use default OpenAI base URL
             else:
-                # Extract base URL for other providers
-                base_url = api_url.rsplit('/', 1)[0] if '/' in api_url else api_url
+                # Для всех остальных (включая proxy API) используем URL как base_url
+                base_url = api_url
 
             self._client_cache[api_url] = AsyncOpenAI(
                 api_key=api_key,
@@ -258,7 +268,8 @@ class OpenAICompatibleClient(LLMClient):
                 extra={
                     "component": "llm_client",
                     "api_url": api_url,
-                    "base_url": base_url
+                    "base_url": base_url,
+                    "is_default_openai": base_url is None
                 }
             )
         else:
