@@ -193,8 +193,9 @@ class MessagePreprocessorApplication:
                 for field_data in schema_data['fields']:
                     fields.append(FieldConfig(**field_data))
                 
+                # ✅ Добавляем version из ключа при создании ParsingSchema
                 schemas[schema_type][version] = ParsingSchema(
-                    version=version,
+                    version=version,  # ✅ Берем версию из ключа (v1, v2, etc.)
                     fields=fields
                 )
         

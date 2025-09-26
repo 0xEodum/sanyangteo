@@ -89,10 +89,9 @@ class ParsingSchemasConfig(BaseModel):
     """Configuration for parsing schemas."""
     model_config = ConfigDict(extra='forbid')
     
-    order: Dict[str, ParsingSchema] = Field(default_factory=dict, description="ORDER parsing schemas")
-    offer: Dict[str, ParsingSchema] = Field(default_factory=dict, description="OFFER parsing schemas")
+    order: Dict[str, Dict[str, Any]] = Field(default_factory=dict, description="ORDER parsing schemas")
+    offer: Dict[str, Dict[str, Any]] = Field(default_factory=dict, description="OFFER parsing schemas")
     
-    # Active schema versions
     active_order_schema: str = Field(default="v1", description="Active ORDER schema version")
     active_offer_schema: str = Field(default="v1", description="Active OFFER schema version")
 

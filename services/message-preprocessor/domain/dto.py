@@ -46,7 +46,7 @@ class TelegramEventDTO(BaseModel):
 # LLM Response DTOs
 class LLMRequest(BaseModel):
     """Request to LLM API"""
-    model_config = ConfigDict(extra='forbid')
+    model_config = ConfigDict(extra='forbid', protected_namespaces=())
     
     model_name: str = Field(..., description="Model name")
     messages: List[Dict[str, str]] = Field(..., description="Chat messages")
@@ -56,7 +56,7 @@ class LLMRequest(BaseModel):
 
 class LLMResponse(BaseModel):
     """Raw response from LLM API"""
-    model_config = ConfigDict(extra='forbid')
+    model_config = ConfigDict(extra='forbid', protected_namespaces=())
     
     success: bool = Field(..., description="Whether request succeeded")
     content: Optional[str] = Field(None, description="Response text")
@@ -117,84 +117,8 @@ class ClassificationResult(BaseModel):
     validation_errors: List[str] = Field(default_factory=list, description="Validation error messages")
 
 
-# Processing Metadata
-class ProcessingMetadata(BaseModel):
-    """Metadata about message processing"""
-    model_config = ConfigDict(extra='forbid')
-    
-    model_used: str = Field(..., description="LLM model used")
-    provider: str = Field(..., description="API provider")
-    processing_time_ms: int = Field(..., description="Total processing time")
-    retry_count: int = Field(default=0, description="Number of retries")
-    validation_passed: bool = Field(..., description="Whether validation passed")
-    telegram_filled_from_sender: bool = Field(default=False, description="Whether telegram was filled from sender")
-    
-    # Additional fields for FAILED classification
-    failure_reason: Optional[str] = Field(None, description="Failure reason for FAILED messages")
-    models_attempted: List[str] = Field(default_factory=list, description="Models attempted for FAILED messages")
-    last_error: Optional[str] = Field(None, description="Last error for FAILED messages")
-
-
-# Output DTO (to preprocessed_data queue)
-class PreprocessedMessageDTO(BaseModel):
-    """
-    Final processed message sent to output queue.
-    Contains classification, parsed data, and original message.
-    
-    For FAILED messages:
-    - classification = "FAILED"
-    - parsed_data = None
-    - processing_metadata contains failure details
-    """
-    model_config = ConfigDict(extra='forbid')
-    
-    schema_version: str = Field(default="1.0", description="Output schema version")
-    processing_timestamp: datetime = Field(default_factory=datetime.utcnow, description="When processed")
-    parsing_schema_version: str = Field(..., description="Parsing schema version used")
-    
-    classification: ClassificationType = Field(..., description="Message classification")
-    parsed_data: Optional[Union[OrderData, OfferData]] = Field(None, description="Structured data or null for OTHER/FAILED")
-    
-    original_message: TelegramEventDTO = Field(..., description="Original telegram message")
-    processing_metadata: ProcessingMetadata = Field(..., description="Processing metadata")
-
-
-# Service Statistics
-class ProcessingStats(BaseModel):
-    """Service processing statistics"""
-    model_config = ConfigDict(extra='forbid')
-    
-    messages_processed: int = Field(default=0, description="Total messages processed")
-    messages_classified: Dict[str, int] = Field(
-        default_factory=lambda: {"ORDER": 0, "OFFER": 0, "OTHER": 0, "FAILED": 0},
-        description="Messages by classification"
-    )
-    messages_failed: int = Field(default=0, description="Messages that failed processing")
-    
-    # Model usage stats
-    models_used: Dict[str, int] = Field(default_factory=dict, description="Usage count by model")
-    avg_processing_time_ms: float = Field(default=0.0, description="Average processing time")
-    
-    # Key usage for test mode
-    key_usage_stats: Dict[str, KeyUsageStats] = Field(default_factory=dict, description="Key usage statistics")
-    
-    last_activity: Optional[datetime] = Field(None, description="Last message timestamp")
-    
-    def increment_processed(self) -> None:
-        """Increment processed message counter."""
-        self.messages_processed += 1
-        self.last_activity = datetime.utcnow()
-    
-    def increment_published(self) -> None:
-        """Increment published message counter."""
-        # This method is kept for compatibility but messages_published
-        # is now tracked via messages_classified
-        pass
-    
-    def increment_failed(self) -> None:
-        """Increment failed message counter."""
-        self.messages_failed += 1
-        self.messages_classified["FAILED"] = self.messages_classified.get("FAILED", 0) + 1
+# Configuration DTOs
+class APIKeyConfig(BaseModel):
     """Single API key configuration"""
     model_config = ConfigDict(extra='forbid')
     
@@ -205,7 +129,7 @@ class ProcessingStats(BaseModel):
 
 class ModelConfig(BaseModel):
     """Single model configuration with optional extra parameters"""
-    model_config = ConfigDict(extra='forbid')
+    model_config = ConfigDict(extra='forbid', protected_namespaces=())
     
     name: str = Field(..., description="Model name")
     url: str = Field(..., description="API URL")
@@ -254,7 +178,7 @@ class ParsingSchema(BaseModel):
     fields: List[FieldConfig] = Field(..., description="Field configurations")
 
 
-# Key Usage Tracking
+# Key Usage Tracking (ПЕРЕНЕСЕНО ПЕРЕД ProcessingStats)
 class KeyUsageStats(BaseModel):
     """Statistics for API key usage"""
     model_config = ConfigDict(extra='forbid')
@@ -278,14 +202,56 @@ class KeyUsageStats(BaseModel):
         return (self.requests_today / self.limit_per_day) * 100
 
 
-# Service Statistics
+# Processing Metadata
+class ProcessingMetadata(BaseModel):
+    """Metadata about message processing"""
+    model_config = ConfigDict(extra='forbid', protected_namespaces=())
+    
+    model_used: str = Field(..., description="LLM model used")
+    provider: str = Field(..., description="API provider")
+    processing_time_ms: int = Field(..., description="Total processing time")
+    retry_count: int = Field(default=0, description="Number of retries")
+    validation_passed: bool = Field(..., description="Whether validation passed")
+    telegram_filled_from_sender: bool = Field(default=False, description="Whether telegram was filled from sender")
+    
+    # Additional fields for FAILED classification
+    failure_reason: Optional[str] = Field(None, description="Failure reason for FAILED messages")
+    models_attempted: List[str] = Field(default_factory=list, description="Models attempted for FAILED messages")
+    last_error: Optional[str] = Field(None, description="Last error for FAILED messages")
+
+
+# Output DTO (to preprocessed_data queue)
+class PreprocessedMessageDTO(BaseModel):
+    """
+    Final processed message sent to output queue.
+    Contains classification, parsed data, and original message.
+    
+    For FAILED messages:
+    - classification = "FAILED"
+    - parsed_data = None
+    - processing_metadata contains failure details
+    """
+    model_config = ConfigDict(extra='forbid')
+    
+    schema_version: str = Field(default="1.0", description="Output schema version")
+    processing_timestamp: datetime = Field(default_factory=datetime.utcnow, description="When processed")
+    parsing_schema_version: str = Field(..., description="Parsing schema version used")
+    
+    classification: ClassificationType = Field(..., description="Message classification")
+    parsed_data: Optional[Union[OrderData, OfferData]] = Field(None, description="Structured data or null for OTHER/FAILED")
+    
+    original_message: TelegramEventDTO = Field(..., description="Original telegram message")
+    processing_metadata: ProcessingMetadata = Field(..., description="Processing metadata")
+
+
+# Service Statistics (ЕДИНСТВЕННОЕ ОПРЕДЕЛЕНИЕ)
 class ProcessingStats(BaseModel):
     """Service processing statistics"""
     model_config = ConfigDict(extra='forbid')
     
     messages_processed: int = Field(default=0, description="Total messages processed")
     messages_classified: Dict[str, int] = Field(
-        default_factory=lambda: {"ORDER": 0, "OFFER": 0, "OTHER": 0},
+        default_factory=lambda: {"ORDER": 0, "OFFER": 0, "OTHER": 0, "FAILED": 0},
         description="Messages by classification"
     )
     messages_failed: int = Field(default=0, description="Messages that failed processing")
@@ -297,7 +263,23 @@ class ProcessingStats(BaseModel):
     # Key usage for test mode
     key_usage_stats: Dict[str, KeyUsageStats] = Field(default_factory=dict, description="Key usage statistics")
     
-    last_activity: Optional[datetime] = Field(None, description="Last processing timestamp")
+    last_activity: Optional[datetime] = Field(None, description="Last message timestamp")
+    
+    def increment_processed(self) -> None:
+        """Increment processed message counter."""
+        self.messages_processed += 1
+        self.last_activity = datetime.utcnow()
+    
+    def increment_published(self) -> None:
+        """Increment published message counter."""
+        # This method is kept for compatibility but messages_published
+        # is now tracked via messages_classified
+        pass
+    
+    def increment_failed(self) -> None:
+        """Increment failed message counter."""
+        self.messages_failed += 1
+        self.messages_classified["FAILED"] = self.messages_classified.get("FAILED", 0) + 1
 
 
 # Context for processing pipeline
