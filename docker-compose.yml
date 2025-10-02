@@ -53,7 +53,6 @@ services:
       redis:
         condition: service_healthy
     environment:
-      - PROCESSING_MODE=test
       - INPUT_QUEUE_URL=redis://redis:6379/0
       - OUTPUT_QUEUE_URL=redis://redis:6379/0
       - REDIS_COUNTERS_URL=redis://redis:6379/1

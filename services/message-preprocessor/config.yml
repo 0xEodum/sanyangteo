@@ -1,7 +1,7 @@
 # Message Preprocessor Service Configuration
 
 # Processing mode: prod or test
-mode: "test"
+mode: "prod"
 
 # Input queue configuration (receives from tg-ingestor)
 input_queue:

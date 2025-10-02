@@ -88,6 +88,16 @@ class OpenAICompatibleClient(LLMClient):
                 }
             )
 
+            logger.debug(
+                "LLM request payload",
+                extra={
+                    "component": "llm_client",
+                    "provider": provider,
+                    "model": request.model_name,
+                    "messages": request_params.get("messages")
+                }
+            )
+
             # Make the API call with all parameters
             completion = await client.chat.completions.create(
                 timeout=self.timeout_seconds,
